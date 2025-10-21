@@ -53,14 +53,6 @@ export default function SummaryCharts({ logs, users, equipment, filter }) {
     };
 
     // Job Type Distribution
-    const getJobTypeDistribution = () => {
-        const types = {};
-        logs.forEach((log) => {
-            const type = log.job_type || 'Unknown';
-            types[type] = (types[type] || 0) + 1;
-        });
-        return Object.entries(types).map(([name, value]) => ({ name, value }));
-    };
 
     // Plant Utilization
     const getPlantUtilization = () => {
@@ -130,7 +122,6 @@ export default function SummaryCharts({ logs, users, equipment, filter }) {
 
     const hoursByDate = getHoursByDate();
     const hoursByMechanic = getHoursByMechanic();
-    //const jobTypeDistribution = getJobTypeDistribution();
     const plantUtilization = getPlantUtilization();
     const breakdownVsMaintenance = getBreakdownVsMaintenance();
     const fluidUsage = getFluidUsage();
