@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../utils/supabaseClient';
 import Navbar from './Navbar';
-import Select from 'react-select';
 
 export default function MechanicForm() {
     const [user, setUser] = useState(null);

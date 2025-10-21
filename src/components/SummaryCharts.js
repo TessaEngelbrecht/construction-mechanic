@@ -1,4 +1,4 @@
-import React from 'react';
+//import React from 'react';
 import {
     BarChart,
     Bar,
@@ -15,7 +15,7 @@ import {
     ResponsiveContainer
 } from 'recharts';
 
-const COLORS = ['#1F4E78', '#2C6A9F', '#4A90E2', '#5B7C99', '#3498DB', '#2ECC71', '#F39C12', '#E74C3C'];
+//const COLORS = ['#1F4E78', '#2C6A9F', '#4A90E2', '#5B7C99', '#3498DB', '#2ECC71', '#F39C12', '#E74C3C'];
 
 export default function SummaryCharts({ logs, users, equipment, filter }) {
 
@@ -130,7 +130,7 @@ export default function SummaryCharts({ logs, users, equipment, filter }) {
 
     const hoursByDate = getHoursByDate();
     const hoursByMechanic = getHoursByMechanic();
-    const jobTypeDistribution = getJobTypeDistribution();
+    //const jobTypeDistribution = getJobTypeDistribution();
     const plantUtilization = getPlantUtilization();
     const breakdownVsMaintenance = getBreakdownVsMaintenance();
     const fluidUsage = getFluidUsage();
