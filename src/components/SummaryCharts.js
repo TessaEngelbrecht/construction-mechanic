@@ -17,112 +17,131 @@ import {
 
 const COLORS = ['#1F4E78', '#2C6A9F', '#4A90E2', '#5B7C99', '#3498DB', '#2ECC71', '#F39C12', '#E74C3C'];
 
-export default function SummaryCharts({ logs, users, filter }) {
+export default function SummaryCharts({ logs, users, equipment, filter }) {
 
-    // Helper function to parse equipment data
-    const parseEquipment = (equipmentData) => {
-        try {
-            if (typeof equipmentData === 'string') {
-                const parsed = JSON.parse(equipmentData);
-                return Array.isArray(parsed) ? parsed : [equipmentData];
-            }
-            if (Array.isArray(equipmentData)) {
-                return equipmentData;
-            }
-            return [String(equipmentData)];
-        } catch {
-            return [String(equipmentData)];
-        }
-    };
-
-    // Group logs by date for time series
-    const groupByDate = () => {
+    // Hours by Date
+    const getHoursByDate = () => {
         const grouped = {};
         logs.forEach((log) => {
             const date = log.date;
             if (!grouped[date]) {
                 grouped[date] = 0;
             }
-            grouped[date] += Number(log.hours_worked);
+            grouped[date] += Number(log.duration) || 0;
         });
         return Object.entries(grouped)
             .map(([date, hours]) => ({ date, hours: parseFloat(hours.toFixed(1)) }))
             .sort((a, b) => new Date(a.date) - new Date(b.date))
-            .slice(-30); // Show last 30 days
+            .slice(-30);
     };
 
-    // Group hours by worker
-    const groupByWorker = () => {
+    // Hours by Mechanic
+    const getHoursByMechanic = () => {
         return users
             .filter((user) => !user.is_admin)
             .map((user) => ({
-                name: user.name.split(' ')[0], // First name only for cleaner display
+                name: user.name.split(' ')[0],
                 hours: parseFloat(
                     logs
                         .filter((log) => log.user_id === user.id)
-                        .reduce((sum, log) => sum + Number(log.hours_worked), 0)
+                        .reduce((sum, log) => sum + (Number(log.duration) || 0), 0)
                         .toFixed(1)
                 )
             }))
-            .filter((worker) => worker.hours > 0)
+            .filter((mechanic) => mechanic.hours > 0)
             .sort((a, b) => b.hours - a.hours);
     };
 
-    // Count equipment usage
-    const getEquipmentStats = () => {
-        const equipmentMap = {};
+    // Job Type Distribution
+    const getJobTypeDistribution = () => {
+        const types = {};
+        logs.forEach((log) => {
+            const type = log.job_type || 'Unknown';
+            types[type] = (types[type] || 0) + 1;
+        });
+        return Object.entries(types).map(([name, value]) => ({ name, value }));
+    };
+
+    // Plant Utilization
+    const getPlantUtilization = () => {
+        return equipment.map((plant) => {
+            const jobCount = logs.filter(log => log.plant_number === plant.plant_number).length;
+            const totalHours = logs
+                .filter(log => log.plant_number === plant.plant_number)
+                .reduce((sum, log) => sum + (Number(log.duration) || 0), 0);
+
+            return {
+                plant: plant.plant_number,
+                jobs: jobCount,
+                hours: parseFloat(totalHours.toFixed(1))
+            };
+        }).filter(p => p.jobs > 0).sort((a, b) => b.hours - a.hours);
+    };
+
+    // Breakdown vs Maintenance
+    const getBreakdownVsMaintenance = () => {
+        const breakdown = logs.filter(log => log.job_type === 'Breakdown').length;
+        const maintenance = logs.filter(log => log.job_type === 'Maintenance').length;
+        const service = logs.filter(log => log.job_type === 'Service').length;
+        const repair = logs.filter(log => log.job_type === 'Repair').length;
+
+        return [
+            { name: 'Breakdowns', value: breakdown, color: '#E74C3C' },
+            { name: 'Maintenance', value: maintenance, color: '#2ECC71' },
+            { name: 'Service', value: service, color: '#3498DB' },
+            { name: 'Repair', value: repair, color: '#F39C12' }
+        ].filter(item => item.value > 0);
+    };
+
+    // Most Common Fluids Used
+    const getFluidUsage = () => {
+        const fluidsMap = {};
 
         logs.forEach((log) => {
-            const equipment = parseEquipment(log.equipment_used);
-            equipment.forEach((item) => {
-                if (item && item.trim()) {
-                    const cleanItem = item.trim();
-                    equipmentMap[cleanItem] = (equipmentMap[cleanItem] || 0) + 1;
+            try {
+                const fluids = typeof log.fluids_used === 'string'
+                    ? JSON.parse(log.fluids_used)
+                    : log.fluids_used || [];
+
+                if (Array.isArray(fluids)) {
+                    fluids.forEach((fluid) => {
+                        if (fluid.type) {
+                            const key = fluid.type;
+                            if (!fluidsMap[key]) {
+                                fluidsMap[key] = 0;
+                            }
+                            fluidsMap[key] += parseFloat(fluid.quantity) || 0;
+                        }
+                    });
                 }
-            });
-        });
-
-        return Object.entries(equipmentMap)
-            .map(([name, count]) => ({ name, count }))
-            .sort((a, b) => b.count - a.count)
-            .slice(0, 10); // Top 10 equipment
-    };
-
-    // Get daily average hours
-    const getDailyAverages = () => {
-        const dailyData = {};
-
-        logs.forEach((log) => {
-            const date = log.date;
-            if (!dailyData[date]) {
-                dailyData[date] = { total: 0, count: 0 };
+            } catch (e) {
+                // Skip invalid data
             }
-            dailyData[date].total += Number(log.hours_worked);
-            dailyData[date].count += 1;
         });
 
-        return Object.entries(dailyData)
-            .map(([date, data]) => ({
-                date,
-                average: parseFloat((data.total / data.count).toFixed(1)),
-                total: parseFloat(data.total.toFixed(1))
+        return Object.entries(fluidsMap)
+            .map(([name, quantity]) => ({
+                name: name.replace('Oil', '').trim(),
+                quantity: parseFloat(quantity.toFixed(1))
             }))
-            .sort((a, b) => new Date(a.date) - new Date(b.date))
-            .slice(-14); // Last 14 days
+            .sort((a, b) => b.quantity - a.quantity)
+            .slice(0, 6);
     };
 
-    const timeSeriesData = groupByDate();
-    const workerData = groupByWorker();
-    const equipmentData = getEquipmentStats();
-    const dailyAverages = getDailyAverages();
+    const hoursByDate = getHoursByDate();
+    const hoursByMechanic = getHoursByMechanic();
+    const jobTypeDistribution = getJobTypeDistribution();
+    const plantUtilization = getPlantUtilization();
+    const breakdownVsMaintenance = getBreakdownVsMaintenance();
+    const fluidUsage = getFluidUsage();
 
     return (
         <div className="charts-container">
-            {/* Hours Worked Over Time */}
-            <div className="chart-card">
-                <h3>📊 Hours Worked Over Time</h3>
+            {/* Hours Over Time */}
+            <div className="chart-card chart-card-wide">
+                <h3>📊 Work Hours Over Time</h3>
                 <ResponsiveContainer width="100%" height={300}>
-                    <LineChart data={timeSeriesData}>
+                    <LineChart data={hoursByDate}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#E1E8ED" />
                         <XAxis
                             dataKey="date"
@@ -132,6 +151,7 @@ export default function SummaryCharts({ logs, users, filter }) {
                         <YAxis
                             tick={{ fontSize: 12 }}
                             stroke="#7F8C8D"
+                            label={{ value: 'Hours', angle: -90, position: 'insideLeft' }}
                         />
                         <Tooltip
                             contentStyle={{
@@ -154,11 +174,11 @@ export default function SummaryCharts({ logs, users, filter }) {
                 </ResponsiveContainer>
             </div>
 
-            {/* Hours by Worker */}
+            {/* Hours by Mechanic */}
             <div className="chart-card">
-                <h3>👷 Total Hours by Worker</h3>
+                <h3>👷 Hours by Mechanic</h3>
                 <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={workerData}>
+                    <BarChart data={hoursByMechanic}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#E1E8ED" />
                         <XAxis
                             dataKey="name"
@@ -180,154 +200,120 @@ export default function SummaryCharts({ logs, users, filter }) {
                         <Bar
                             dataKey="hours"
                             fill="#2C6A9F"
-                            name="Hours Worked"
+                            name="Hours"
                             radius={[8, 8, 0, 0]}
                         />
                     </BarChart>
                 </ResponsiveContainer>
             </div>
 
-            {/* Equipment Usage Distribution */}
+            {/* Job Type Distribution */}
             <div className="chart-card">
-                <h3>🔧 Top 10 Equipment Usage</h3>
+                <h3>📋 Job Type Distribution</h3>
                 <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={equipmentData} layout="vertical">
+                    <PieChart>
+                        <Pie
+                            data={breakdownVsMaintenance}
+                            cx="50%"
+                            cy="50%"
+                            labelLine={false}
+                            label={({ name, value }) => `${name}: ${value}`}
+                            outerRadius={100}
+                            dataKey="value"
+                        >
+                            {breakdownVsMaintenance.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                        </Pie>
+                        <Tooltip />
+                    </PieChart>
+                </ResponsiveContainer>
+            </div>
+
+            {/* Plant Utilization */}
+            <div className="chart-card">
+                <h3>🚜 Plant Utilization (Hours)</h3>
+                <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={plantUtilization} layout="vertical">
                         <CartesianGrid strokeDasharray="3 3" stroke="#E1E8ED" />
                         <XAxis type="number" tick={{ fontSize: 12 }} stroke="#7F8C8D" />
                         <YAxis
                             type="category"
-                            dataKey="name"
+                            dataKey="plant"
                             tick={{ fontSize: 11 }}
-                            width={120}
+                            width={60}
                             stroke="#7F8C8D"
                         />
-                        <Tooltip
-                            contentStyle={{
-                                backgroundColor: '#fff',
-                                border: '1px solid #E1E8ED',
-                                borderRadius: '8px'
-                            }}
-                        />
+                        <Tooltip />
                         <Legend />
                         <Bar
-                            dataKey="count"
+                            dataKey="hours"
                             fill="#4A90E2"
-                            name="Times Used"
+                            name="Hours"
                             radius={[0, 8, 8, 0]}
                         />
                     </BarChart>
                 </ResponsiveContainer>
             </div>
 
-            {/* Worker Distribution Pie Chart */}
-            <div className="chart-card">
-                <h3>📈 Worker Hours Distribution</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                    <PieChart>
-                        <Pie
-                            data={workerData}
-                            cx="50%"
-                            cy="50%"
-                            labelLine={false}
-                            label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                            outerRadius={100}
-                            fill="#8884d8"
-                            dataKey="hours"
-                        >
-                            {workerData.map((entry, index) => (
-                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                            ))}
-                        </Pie>
-                        <Tooltip
-                            contentStyle={{
-                                backgroundColor: '#fff',
-                                border: '1px solid #E1E8ED',
-                                borderRadius: '8px'
-                            }}
-                            formatter={(value) => `${value}h`}
-                        />
-                    </PieChart>
-                </ResponsiveContainer>
-            </div>
-
-            {/* Daily Averages */}
-            {dailyAverages.length > 0 && (
-                <div className="chart-card chart-card-wide">
-                    <h3>📅 Daily Average vs Total Hours (Last 14 Days)</h3>
+            {/* Fluid Usage */}
+            {fluidUsage.length > 0 && (
+                <div className="chart-card">
+                    <h3>🛢️ Fluid/Oil Usage (Litres)</h3>
                     <ResponsiveContainer width="100%" height={300}>
-                        <LineChart data={dailyAverages}>
+                        <BarChart data={fluidUsage}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#E1E8ED" />
                             <XAxis
-                                dataKey="date"
-                                tick={{ fontSize: 12 }}
+                                dataKey="name"
+                                tick={{ fontSize: 10 }}
                                 stroke="#7F8C8D"
+                                angle={-15}
+                                textAnchor="end"
+                                height={80}
                             />
                             <YAxis
                                 tick={{ fontSize: 12 }}
                                 stroke="#7F8C8D"
                             />
-                            <Tooltip
-                                contentStyle={{
-                                    backgroundColor: '#fff',
-                                    border: '1px solid #E1E8ED',
-                                    borderRadius: '8px'
-                                }}
-                            />
+                            <Tooltip />
                             <Legend />
-                            <Line
-                                type="monotone"
-                                dataKey="total"
-                                stroke="#1F4E78"
-                                strokeWidth={2}
-                                name="Total Hours"
-                                dot={{ fill: '#1F4E78', r: 3 }}
+                            <Bar
+                                dataKey="quantity"
+                                fill="#F39C12"
+                                name="Litres Used"
+                                radius={[8, 8, 0, 0]}
                             />
-                            <Line
-                                type="monotone"
-                                dataKey="average"
-                                stroke="#2ECC71"
-                                strokeWidth={2}
-                                name="Average Hours"
-                                dot={{ fill: '#2ECC71', r: 3 }}
-                                strokeDasharray="5 5"
-                            />
-                        </LineChart>
+                        </BarChart>
                     </ResponsiveContainer>
                 </div>
             )}
 
-            {/* Equipment Usage Pie Chart */}
-            {equipmentData.length > 0 && (
-                <div className="chart-card">
-                    <h3>🛠️ Equipment Usage Share</h3>
-                    <ResponsiveContainer width="100%" height={300}>
-                        <PieChart>
-                            <Pie
-                                data={equipmentData.slice(0, 8)}
-                                cx="50%"
-                                cy="50%"
-                                labelLine={false}
-                                label={({ name, percent }) => `${name.split(' ')[0]}: ${(percent * 100).toFixed(0)}%`}
-                                outerRadius={100}
-                                fill="#8884d8"
-                                dataKey="count"
-                            >
-                                {equipmentData.slice(0, 8).map((entry, index) => (
-                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                ))}
-                            </Pie>
-                            <Tooltip
-                                contentStyle={{
-                                    backgroundColor: '#fff',
-                                    border: '1px solid #E1E8ED',
-                                    borderRadius: '8px'
-                                }}
-                                formatter={(value) => `${value} times`}
-                            />
-                        </PieChart>
-                    </ResponsiveContainer>
-                </div>
-            )}
+            {/* Plant Job Count */}
+            <div className="chart-card">
+                <h3>🔧 Jobs per Plant</h3>
+                <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={plantUtilization}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#E1E8ED" />
+                        <XAxis
+                            dataKey="plant"
+                            tick={{ fontSize: 12 }}
+                            stroke="#7F8C8D"
+                        />
+                        <YAxis
+                            tick={{ fontSize: 12 }}
+                            stroke="#7F8C8D"
+                        />
+                        <Tooltip />
+                        <Legend />
+                        <Bar
+                            dataKey="jobs"
+                            fill="#2ECC71"
+                            name="Job Count"
+                            radius={[8, 8, 0, 0]}
+                        />
+                    </BarChart>
+                </ResponsiveContainer>
+            </div>
         </div>
     );
 }

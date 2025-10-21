@@ -9,13 +9,17 @@ export default function AdminDashboard() {
     const [user, setUser] = useState(null);
     const [logs, setLogs] = useState([]);
     const [users, setUsers] = useState([]);
+    const [equipment, setEquipment] = useState([]);
     const [filter, setFilter] = useState('all');
     const [loading, setLoading] = useState(true);
+    const [selectedJobCard, setSelectedJobCard] = useState(null);
     const [stats, setStats] = useState({
         totalHours: 0,
-        totalWorkers: 0,
-        totalLogs: 0,
-        avgHoursPerDay: 0
+        totalJobCards: 0,
+        breakdownCount: 0,
+        maintenanceCount: 0,
+        avgDuration: 0,
+        pendingApproval: 0
     });
 
     useEffect(() => {
@@ -31,6 +35,7 @@ export default function AdminDashboard() {
 
     const fetchData = async () => {
         setLoading(true);
+
         const { data: logsData } = await supabase
             .from('work_logs')
             .select('*')
@@ -41,18 +46,33 @@ export default function AdminDashboard() {
             .select('*')
             .order('name');
 
+        const { data: equipmentData } = await supabase
+            .from('equipment')
+            .select('*')
+            .order('plant_number');
+
         setLogs(logsData || []);
         setUsers(usersData || []);
+        setEquipment(equipmentData || []);
         setLoading(false);
     };
 
     const calculateStats = () => {
-        const totalHours = logs.reduce((sum, log) => sum + Number(log.hours_worked), 0);
-        const totalWorkers = new Set(logs.map((log) => log.user_id)).size;
-        const totalLogs = logs.length;
-        const avgHoursPerDay = totalLogs > 0 ? (totalHours / totalLogs).toFixed(1) : 0;
+        const totalHours = logs.reduce((sum, log) => sum + (Number(log.duration) || 0), 0);
+        const totalJobCards = logs.length;
+        const breakdownCount = logs.filter(log => log.job_type === 'Breakdown').length;
+        const maintenanceCount = logs.filter(log => log.job_type === 'Maintenance').length;
+        const avgDuration = totalJobCards > 0 ? (totalHours / totalJobCards).toFixed(1) : 0;
+        const pendingApproval = logs.filter(log => !log.manager_approved).length;
 
-        setStats({ totalHours, totalWorkers, totalLogs, avgHoursPerDay });
+        setStats({
+            totalHours: totalHours.toFixed(1),
+            totalJobCards,
+            breakdownCount,
+            maintenanceCount,
+            avgDuration,
+            pendingApproval
+        });
     };
 
     const getFilteredLogs = () => {
@@ -76,21 +96,31 @@ export default function AdminDashboard() {
         }
     };
 
-    const parseEquipment = (equipmentData) => {
+    const parseFluids = (fluidsData) => {
         try {
-            // If it's already a string, try to parse it
-            if (typeof equipmentData === 'string') {
-                const parsed = JSON.parse(equipmentData);
-                return Array.isArray(parsed) ? parsed : [equipmentData];
+            if (typeof fluidsData === 'string') {
+                return JSON.parse(fluidsData);
             }
-            // If it's already an array, return it
-            if (Array.isArray(equipmentData)) {
-                return equipmentData;
+            if (Array.isArray(fluidsData)) {
+                return fluidsData;
             }
-            return [String(equipmentData)];
+            return [];
         } catch {
-            // If parsing fails, return as single item array
-            return [String(equipmentData)];
+            return [];
+        }
+    };
+
+    const approveJobCard = async (jobCardId) => {
+        const { error } = await supabase
+            .from('work_logs')
+            .update({ manager_approved: true })
+            .eq('id', jobCardId);
+
+        if (!error) {
+            fetchData();
+            alert('Job card approved successfully!');
+        } else {
+            alert('Error approving job card');
         }
     };
 
@@ -98,41 +128,46 @@ export default function AdminDashboard() {
         const doc = new jsPDF();
         const filteredLogs = getFilteredLogs();
 
-        // Add title
+        // Add header
         doc.setFontSize(20);
         doc.setFont(undefined, 'bold');
-        doc.text('Work Logs Summary Report', 14, 22);
+        doc.text('JODAN Construction', 14, 20);
+        doc.setFontSize(16);
+        doc.text('Job Card Summary Report', 14, 28);
 
         // Add metadata
-        doc.setFontSize(11);
+        doc.setFontSize(10);
         doc.setFont(undefined, 'normal');
-        doc.text(`Filter: ${filter.charAt(0).toUpperCase() + filter.slice(1)}`, 14, 32);
-        doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 38);
-        doc.text(`Total Hours: ${stats.totalHours}h | Total Logs: ${filteredLogs.length}`, 14, 44);
+        doc.text(`Filter: ${filter.charAt(0).toUpperCase() + filter.slice(1)}`, 14, 36);
+        doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 41);
+        doc.text(`Total Job Cards: ${filteredLogs.length} | Total Hours: ${stats.totalHours}h`, 14, 46);
+        doc.text(`Breakdowns: ${stats.breakdownCount} | Maintenance: ${stats.maintenanceCount}`, 14, 51);
 
         // Prepare table data
         const tableData = filteredLogs.map((log) => {
             const worker = users.find((u) => u.id === log.user_id);
-            const equipment = parseEquipment(log.equipment_used);
-            const equipmentStr = equipment.join(', ');
 
             return [
+                log.jobcard_number || 'N/A',
                 log.date,
+                log.plant_number,
+                log.smr,
                 worker?.name || 'Unknown',
-                log.hours_worked + 'h',
-                log.work_done.length > 45 ? log.work_done.substring(0, 45) + '...' : log.work_done,
-                equipmentStr.length > 40 ? equipmentStr.substring(0, 40) + '...' : equipmentStr
+                log.job_type,
+                log.description.length > 30 ? log.description.substring(0, 30) + '...' : log.description,
+                log.duration ? log.duration + 'h' : 'N/A',
+                log.manager_approved ? 'Yes' : 'No'
             ];
         });
 
-        // Add table - doc.autoTable will work now
+        // Add table
         autoTable(doc, {
-            head: [['Date', 'Worker', 'Hours', 'Work Done', 'Equipment Used']],
+            head: [['Job Card', 'Date', 'Plant', 'SMR', 'Mechanic', 'Type', 'Description', 'Duration', 'Approved']],
             body: tableData,
-            startY: 52,
+            startY: 56,
             styles: {
-                fontSize: 9,
-                cellPadding: 4
+                fontSize: 8,
+                cellPadding: 2
             },
             headStyles: {
                 fillColor: [31, 78, 120],
@@ -143,11 +178,15 @@ export default function AdminDashboard() {
                 fillColor: [245, 247, 250]
             },
             columnStyles: {
-                0: { cellWidth: 25 },
-                1: { cellWidth: 35 },
-                2: { cellWidth: 20 },
-                3: { cellWidth: 50 },
-                4: { cellWidth: 50 }
+                0: { cellWidth: 20 },
+                1: { cellWidth: 20 },
+                2: { cellWidth: 15 },
+                3: { cellWidth: 15 },
+                4: { cellWidth: 25 },
+                5: { cellWidth: 20 },
+                6: { cellWidth: 35 },
+                7: { cellWidth: 15 },
+                8: { cellWidth: 15 }
             }
         });
 
@@ -155,7 +194,7 @@ export default function AdminDashboard() {
         const pageCount = doc.internal.getNumberOfPages();
         for (let i = 1; i <= pageCount; i++) {
             doc.setPage(i);
-            doc.setFontSize(9);
+            doc.setFontSize(8);
             doc.text(
                 `Page ${i} of ${pageCount}`,
                 doc.internal.pageSize.getWidth() / 2,
@@ -165,9 +204,8 @@ export default function AdminDashboard() {
         }
 
         // Save the PDF
-        doc.save(`work_logs_${filter}_${new Date().toISOString().slice(0, 10)}.pdf`);
+        doc.save(`jodan_jobcards_${filter}_${new Date().toISOString().slice(0, 10)}.pdf`);
     };
-
 
     const filteredLogs = getFilteredLogs();
 
@@ -186,8 +224,8 @@ export default function AdminDashboard() {
             <div className="page-container">
                 <div className="admin-dashboard">
                     <div className="dashboard-header">
-                        <h2>Admin Dashboard</h2>
-                        <p>Manage and monitor all worker activities</p>
+                        <h2>🏗️ JODAN Construction - Admin Dashboard</h2>
+                        <p>Job Card Management & Fleet Monitoring</p>
                     </div>
 
                     {/* Stats Cards */}
@@ -195,29 +233,43 @@ export default function AdminDashboard() {
                         <div className="stat-card">
                             <div className="stat-icon">⏰</div>
                             <div className="stat-content">
-                                <h3>{stats.totalHours.toFixed(1)}</h3>
+                                <h3>{stats.totalHours}</h3>
                                 <p>Total Hours</p>
                             </div>
                         </div>
                         <div className="stat-card">
-                            <div className="stat-icon">👷</div>
+                            <div className="stat-icon">📋</div>
                             <div className="stat-content">
-                                <h3>{stats.totalWorkers}</h3>
-                                <p>Active Workers</p>
+                                <h3>{stats.totalJobCards}</h3>
+                                <p>Job Cards</p>
                             </div>
                         </div>
-                        <div className="stat-card">
-                            <div className="stat-icon">📝</div>
+                        <div className="stat-card breakdown-card">
+                            <div className="stat-icon">🔴</div>
                             <div className="stat-content">
-                                <h3>{stats.totalLogs}</h3>
-                                <p>Work Logs</p>
+                                <h3>{stats.breakdownCount}</h3>
+                                <p>Breakdowns</p>
+                            </div>
+                        </div>
+                        <div className="stat-card maintenance-card">
+                            <div className="stat-icon">🔧</div>
+                            <div className="stat-content">
+                                <h3>{stats.maintenanceCount}</h3>
+                                <p>Maintenance</p>
                             </div>
                         </div>
                         <div className="stat-card">
                             <div className="stat-icon">📊</div>
                             <div className="stat-content">
-                                <h3>{stats.avgHoursPerDay}</h3>
-                                <p>Avg Hours/Day</p>
+                                <h3>{stats.avgDuration}h</h3>
+                                <p>Avg Duration</p>
+                            </div>
+                        </div>
+                        <div className="stat-card pending-card">
+                            <div className="stat-icon">⏳</div>
+                            <div className="stat-content">
+                                <h3>{stats.pendingApproval}</h3>
+                                <p>Pending Approval</p>
                             </div>
                         </div>
                     </div>
@@ -262,48 +314,78 @@ export default function AdminDashboard() {
                     </div>
 
                     {/* Charts */}
-                    <SummaryCharts logs={filteredLogs} users={users} filter={filter} />
+                    <SummaryCharts logs={filteredLogs} users={users} equipment={equipment} filter={filter} />
 
-                    {/* Logs Table */}
+                    {/* Job Cards Table */}
                     <div className="logs-section">
-                        <h3>Recent Work Logs ({filteredLogs.length})</h3>
+                        <h3>📋 Job Cards ({filteredLogs.length})</h3>
                         <div className="table-container">
                             <table className="logs-table">
                                 <thead>
                                     <tr>
+                                        <th>Job Card #</th>
                                         <th>Date</th>
-                                        <th>Worker</th>
-                                        <th>Hours</th>
-                                        <th>Work Done</th>
-                                        <th>Equipment Used</th>
+                                        <th>Plant</th>
+                                        <th>SMR</th>
+                                        <th>Type</th>
+                                        <th>Mechanic</th>
+                                        <th>Description</th>
+                                        <th>Duration</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {filteredLogs.length === 0 ? (
                                         <tr>
-                                            <td colSpan="5" className="no-data">
-                                                No logs found for the selected filter.
+                                            <td colSpan="10" className="no-data">
+                                                No job cards found for the selected filter.
                                             </td>
                                         </tr>
                                     ) : (
                                         filteredLogs.map((log) => {
                                             const worker = users.find((u) => u.id === log.user_id);
-                                            const equipment = parseEquipment(log.equipment_used);
+                                            const equipmentInfo = equipment.find((eq) => eq.plant_number === log.plant_number);
 
                                             return (
-                                                <tr key={log.id}>
-                                                    <td><strong>{log.date}</strong></td>
-                                                    <td>{worker?.name || 'Unknown'}</td>
-                                                    <td><strong>{log.hours_worked}h</strong></td>
-                                                    <td>{log.work_done}</td>
+                                                <tr key={log.id} className={log.job_type === 'Breakdown' ? 'breakdown-row' : ''}>
                                                     <td>
-                                                        <div className="equipment-badges">
-                                                            {equipment.map((item, idx) => (
-                                                                <span key={idx} className="equipment-badge">
-                                                                    {item}
-                                                                </span>
-                                                            ))}
+                                                        <strong className="jobcard-link" onClick={() => setSelectedJobCard(log)}>
+                                                            {log.jobcard_number}
+                                                        </strong>
+                                                    </td>
+                                                    <td>{log.date}</td>
+                                                    <td>
+                                                        <div className="plant-info">
+                                                            <strong>{log.plant_number}</strong>
+                                                            {equipmentInfo && (
+                                                                <small>{equipmentInfo.equipment_type}</small>
+                                                            )}
                                                         </div>
+                                                    </td>
+                                                    <td>{log.smr}h</td>
+                                                    <td>
+                                                        <span className={`type-badge ${log.job_type.toLowerCase()}`}>
+                                                            {log.job_type}
+                                                        </span>
+                                                    </td>
+                                                    <td>{worker?.name || 'Unknown'}</td>
+                                                    <td className="description-cell">{log.description}</td>
+                                                    <td><strong>{log.duration ? log.duration + 'h' : 'N/A'}</strong></td>
+                                                    <td>
+                                                        <span className={`status-badge ${log.manager_approved ? 'approved' : 'pending'}`}>
+                                                            {log.manager_approved ? '✓ Approved' : '⏳ Pending'}
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        {!log.manager_approved && (
+                                                            <button
+                                                                className="btn-approve"
+                                                                onClick={() => approveJobCard(log.id)}
+                                                            >
+                                                                Approve
+                                                            </button>
+                                                        )}
                                                     </td>
                                                 </tr>
                                             );
@@ -313,8 +395,151 @@ export default function AdminDashboard() {
                             </table>
                         </div>
                     </div>
+
+                    {/* Fleet Status Overview */}
+                    <div className="fleet-section">
+                        <h3>🚜 Fleet Status Overview</h3>
+                        <div className="fleet-grid">
+                            {equipment.map((plant) => {
+                                const recentJobs = logs.filter(log => log.plant_number === plant.plant_number).length;
+                                const lastJob = logs.find(log => log.plant_number === plant.plant_number);
+
+                                return (
+                                    <div key={plant.id} className="fleet-card">
+                                        <div className="fleet-header">
+                                            <strong>{plant.plant_number}</strong>
+                                            <span className={`fleet-status ${plant.status}`}>{plant.status}</span>
+                                        </div>
+                                        <p className="fleet-type">{plant.equipment_type}</p>
+                                        <p className="fleet-model">{plant.make_model}</p>
+                                        <div className="fleet-stats">
+                                            <div className="fleet-stat">
+                                                <span className="label">SMR:</span>
+                                                <span className="value">{plant.current_smr}h</span>
+                                            </div>
+                                            <div className="fleet-stat">
+                                                <span className="label">Jobs:</span>
+                                                <span className="value">{recentJobs}</span>
+                                            </div>
+                                        </div>
+                                        {lastJob && (
+                                            <p className="fleet-last-service">
+                                                Last service: {lastJob.date}
+                                            </p>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
                 </div>
             </div>
+
+            {/* Job Card Detail Modal */}
+            {selectedJobCard && (
+                <div className="modal-overlay" onClick={() => setSelectedJobCard(null)}>
+                    <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h2>Job Card Details</h2>
+                            <button className="modal-close" onClick={() => setSelectedJobCard(null)}>×</button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="detail-row">
+                                <strong>Job Card #:</strong> {selectedJobCard.jobcard_number}
+                            </div>
+                            <div className="detail-row">
+                                <strong>Date:</strong> {selectedJobCard.date}
+                            </div>
+                            <div className="detail-row">
+                                <strong>Plant:</strong> {selectedJobCard.plant_number}
+                            </div>
+                            <div className="detail-row">
+                                <strong>SMR:</strong> {selectedJobCard.smr} hours
+                            </div>
+                            <div className="detail-row">
+                                <strong>Job Type:</strong> {selectedJobCard.job_type}
+                            </div>
+                            <div className="detail-row">
+                                <strong>Mechanic:</strong> {users.find(u => u.id === selectedJobCard.user_id)?.name}
+                            </div>
+                            <div className="detail-section">
+                                <strong>Description:</strong>
+                                <p>{selectedJobCard.description}</p>
+                            </div>
+                            <div className="detail-section">
+                                <strong>Work Done:</strong>
+                                <p>{selectedJobCard.work_done}</p>
+                            </div>
+                            {selectedJobCard.work_to_plan && (
+                                <div className="detail-section">
+                                    <strong>Work to Plan:</strong>
+                                    <p>{selectedJobCard.work_to_plan}</p>
+                                </div>
+                            )}
+                            <div className="detail-row">
+                                <strong>Time Started:</strong> {selectedJobCard.time_started || 'N/A'}
+                            </div>
+                            <div className="detail-row">
+                                <strong>Time Ended:</strong> {selectedJobCard.time_ended || 'N/A'}
+                            </div>
+                            <div className="detail-row">
+                                <strong>Duration:</strong> {selectedJobCard.duration ? selectedJobCard.duration + ' hours' : 'N/A'}
+                            </div>
+                            {selectedJobCard.delay_reason && (
+                                <div className="detail-section alert">
+                                    <strong>⚠️ Delay Reason:</strong>
+                                    <p>{selectedJobCard.delay_reason}</p>
+                                </div>
+                            )}
+                            {parseFluids(selectedJobCard.fluids_used).length > 0 && (
+                                <div className="detail-section">
+                                    <strong>Fluids/Oils Used:</strong>
+                                    <table className="fluids-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Type</th>
+                                                <th>Quantity</th>
+                                                <th>Unit</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {parseFluids(selectedJobCard.fluids_used).map((fluid, idx) => (
+                                                <tr key={idx}>
+                                                    <td>{fluid.type}</td>
+                                                    <td>{fluid.quantity}</td>
+                                                    <td>{fluid.unit}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                            <div className="detail-row">
+                                <strong>Status:</strong>
+                                <span className={`status-badge ${selectedJobCard.manager_approved ? 'approved' : 'pending'}`}>
+                                    {selectedJobCard.manager_approved ? '✓ Approved' : '⏳ Pending Approval'}
+                                </span>
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            {!selectedJobCard.manager_approved && (
+                                <button
+                                    className="btn-primary"
+                                    onClick={() => {
+                                        approveJobCard(selectedJobCard.id);
+                                        setSelectedJobCard(null);
+                                    }}
+                                >
+                                    Approve Job Card
+                                </button>
+                            )}
+                            <button className="btn-secondary" onClick={() => setSelectedJobCard(null)}>
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
