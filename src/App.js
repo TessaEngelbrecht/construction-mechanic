@@ -1,23 +1,40 @@
-import logo from './logo.svg';
+import React from 'react';
+import { Routes, Route, Navigate } from 'react-router-dom';
+import Login from './components/Login';
+import Signup from './components/Signup';
+import MechanicForm from './components/MechanicForm';
+import AdminDashboard from './components/AdminDashboard';
 import './App.css';
+
+function ProtectedRoute({ children }) {
+  const user = JSON.parse(localStorage.getItem('currentUser'));
+  return user ? children : <Navigate to="/login" />;
+}
 
 function App() {
   return (
     <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
+      <Routes>
+        <Route path="/" element={<Navigate to="/login" />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<Signup />} />
+        <Route
+          path="/mechanic"
+          element={
+            <ProtectedRoute>
+              <MechanicForm />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute>
+              <AdminDashboard />
+            </ProtectedRoute>
+          }
+        />
+      </Routes>
     </div>
   );
 }

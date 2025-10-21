@@ -1,0 +1,52 @@
+body {
+  font-family: 'Segoe UI', Arial, sans-serif;
+  background: #f4f6fa;
+  margin: 0;
+  padding: 0;
+}
+.auth-container, .mechanic-form, .admin-dashboard {
+  background: #fff;
+  margin: 40px auto;
+  padding: 32px;
+  border-radius: 12px;
+  box-shadow: 0 2px 16px rgba(0,0,0,0.08);
+  max-width: 400px;
+}
+input, textarea, button {
+  display: block;
+  width: 100%;
+  margin: 12px 0;
+  padding: 10px;
+  border-radius: 6px;
+  border: 1px solid #ddd;
+  font-size: 1rem;
+}
+button {
+  background: #4f8cff;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background 0.2s;
+}
+button:hover {
+  background: #2563eb;
+}
+.charts {
+  display: flex;
+  gap: 32px;
+  justify-content: center;
+  margin: 32px 0;
+}
+.filters {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.logs-list {
+  margin-top: 24px;
+}
+.msg {
+  color: #2563eb;
+  margin-top: 8px;
+}
