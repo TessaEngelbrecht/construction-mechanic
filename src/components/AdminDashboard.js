@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { supabase } from '../utils/supabaseClient';
+import { query } from '../utils/neonClient';
 import SummaryCharts from './SummaryCharts';
 import Navbar from './Navbar';
 import jsPDF from 'jspdf';
@@ -36,24 +36,30 @@ export default function AdminDashboard() {
     const fetchData = async () => {
         setLoading(true);
 
-        const { data: logsData } = await supabase
-            .from('work_logs')
-            .select('*')
-            .order('date', { ascending: false });
+        try {
+            const { data: logsData } = await query`
+        SELECT * FROM work_logs ORDER BY date DESC
+      `;
 
-        const { data: usersData } = await supabase
-            .from('users')
-            .select('*')
-            .order('name');
+            const { data: usersData } = await query`
+        SELECT * FROM users ORDER BY name
+      `;
 
-        const { data: equipmentData } = await supabase
-            .from('equipment')
-            .select('*')
-            .order('plant_number');
+            const { data: equipmentData } = await query`
+        SELECT * FROM equipment ORDER BY plant_number
+      `;
 
-        setLogs(logsData || []);
-        setUsers(usersData || []);
-        setEquipment(equipmentData || []);
+            // Ensure arrays
+            setLogs(Array.isArray(logsData) ? logsData : []);
+            setUsers(Array.isArray(usersData) ? usersData : []);
+            setEquipment(Array.isArray(equipmentData) ? equipmentData : []);
+        } catch (error) {
+            console.error('Error fetching data:', error);
+            setLogs([]);
+            setUsers([]);
+            setEquipment([]);
+        }
+
         setLoading(false);
     };
 
@@ -75,22 +81,44 @@ export default function AdminDashboard() {
         });
     };
 
+    const formatDate = (dateValue) => {
+        if (!dateValue) return 'N/A';
+        if (dateValue instanceof Date) {
+            return dateValue.toISOString().split('T')[0];
+        }
+        return String(dateValue);
+    };
+
     const getFilteredLogs = () => {
+        // Safety check - ensure logs is an array
+        if (!Array.isArray(logs) || logs.length === 0) {
+            return [];
+        }
+
         const now = new Date();
         const today = now.toISOString().slice(0, 10);
 
         switch (filter) {
             case 'daily':
-                return logs.filter((log) => log.date === today);
-            case 'weekly':
-                const weekAgo = new Date(now.setDate(now.getDate() - 7)).toISOString().slice(0, 10);
-                return logs.filter((log) => log.date >= weekAgo);
-            case 'monthly':
-                const monthAgo = new Date(now.setMonth(now.getMonth() - 1)).toISOString().slice(0, 10);
-                return logs.filter((log) => log.date >= monthAgo);
-            case 'yearly':
-                const yearAgo = new Date(now.setFullYear(now.getFullYear() - 1)).toISOString().slice(0, 10);
-                return logs.filter((log) => log.date >= yearAgo);
+                return logs.filter((log) => formatDate(log.date) === today);
+            case 'weekly': {
+                const weekAgo = new Date();
+                weekAgo.setDate(weekAgo.getDate() - 7);
+                const weekAgoStr = weekAgo.toISOString().slice(0, 10);
+                return logs.filter((log) => formatDate(log.date) >= weekAgoStr);
+            }
+            case 'monthly': {
+                const monthAgo = new Date();
+                monthAgo.setMonth(monthAgo.getMonth() - 1);
+                const monthAgoStr = monthAgo.toISOString().slice(0, 10);
+                return logs.filter((log) => formatDate(log.date) >= monthAgoStr);
+            }
+            case 'yearly': {
+                const yearAgo = new Date();
+                yearAgo.setFullYear(yearAgo.getFullYear() - 1);
+                const yearAgoStr = yearAgo.toISOString().slice(0, 10);
+                return logs.filter((log) => formatDate(log.date) >= yearAgoStr);
+            }
             default:
                 return logs;
         }
@@ -111,10 +139,9 @@ export default function AdminDashboard() {
     };
 
     const approveJobCard = async (jobCardId) => {
-        const { error } = await supabase
-            .from('work_logs')
-            .update({ manager_approved: true })
-            .eq('id', jobCardId);
+        const { error } = await query`
+      UPDATE work_logs SET manager_approved = ${true} WHERE id = ${jobCardId}
+    `;
 
         if (!error) {
             fetchData();
@@ -149,7 +176,7 @@ export default function AdminDashboard() {
 
             return [
                 log.jobcard_number || 'N/A',
-                log.date,
+                formatDate(log.date),
                 log.plant_number,
                 log.smr,
                 worker?.name || 'Unknown',
@@ -314,7 +341,12 @@ export default function AdminDashboard() {
                     </div>
 
                     {/* Charts */}
-                    <SummaryCharts logs={filteredLogs} users={users} equipment={equipment} filter={filter} />
+                    <SummaryCharts
+                        logs={filteredLogs}
+                        users={users}
+                        equipment={equipment}
+                        filter={filter}
+                    />
 
                     {/* Job Cards Table */}
                     <div className="logs-section">
@@ -354,7 +386,7 @@ export default function AdminDashboard() {
                                                             {log.jobcard_number}
                                                         </strong>
                                                     </td>
-                                                    <td>{log.date}</td>
+                                                    <td>{formatDate(log.date)}</td>
                                                     <td>
                                                         <div className="plant-info">
                                                             <strong>{log.plant_number}</strong>
@@ -400,36 +432,40 @@ export default function AdminDashboard() {
                     <div className="fleet-section">
                         <h3>🚜 Fleet Status Overview</h3>
                         <div className="fleet-grid">
-                            {equipment.map((plant) => {
-                                const recentJobs = logs.filter(log => log.plant_number === plant.plant_number).length;
-                                const lastJob = logs.find(log => log.plant_number === plant.plant_number);
+                            {equipment.length === 0 ? (
+                                <p className="no-data">No equipment data available.</p>
+                            ) : (
+                                equipment.map((plant) => {
+                                    const recentJobs = logs.filter(log => log.plant_number === plant.plant_number).length;
+                                    const lastJob = logs.find(log => log.plant_number === plant.plant_number);
 
-                                return (
-                                    <div key={plant.id} className="fleet-card">
-                                        <div className="fleet-header">
-                                            <strong>{plant.plant_number}</strong>
-                                            <span className={`fleet-status ${plant.status}`}>{plant.status}</span>
-                                        </div>
-                                        <p className="fleet-type">{plant.equipment_type}</p>
-                                        <p className="fleet-model">{plant.make_model}</p>
-                                        <div className="fleet-stats">
-                                            <div className="fleet-stat">
-                                                <span className="label">SMR:</span>
-                                                <span className="value">{plant.current_smr}h</span>
+                                    return (
+                                        <div key={plant.id} className="fleet-card">
+                                            <div className="fleet-header">
+                                                <strong>{plant.plant_number}</strong>
+                                                <span className={`fleet-status ${plant.status}`}>{plant.status}</span>
                                             </div>
-                                            <div className="fleet-stat">
-                                                <span className="label">Jobs:</span>
-                                                <span className="value">{recentJobs}</span>
+                                            <p className="fleet-type">{plant.equipment_type}</p>
+                                            <p className="fleet-model">{plant.make_model}</p>
+                                            <div className="fleet-stats">
+                                                <div className="fleet-stat">
+                                                    <span className="label">SMR:</span>
+                                                    <span className="value">{plant.current_smr}h</span>
+                                                </div>
+                                                <div className="fleet-stat">
+                                                    <span className="label">Jobs:</span>
+                                                    <span className="value">{recentJobs}</span>
+                                                </div>
                                             </div>
+                                            {lastJob && (
+                                                <p className="fleet-last-service">
+                                                    Last service: {formatDate(lastJob.date)}
+                                                </p>
+                                            )}
                                         </div>
-                                        {lastJob && (
-                                            <p className="fleet-last-service">
-                                                Last service: {lastJob.date}
-                                            </p>
-                                        )}
-                                    </div>
-                                );
-                            })}
+                                    );
+                                })
+                            )}
                         </div>
                     </div>
                 </div>
@@ -448,7 +484,7 @@ export default function AdminDashboard() {
                                 <strong>Job Card #:</strong> {selectedJobCard.jobcard_number}
                             </div>
                             <div className="detail-row">
-                                <strong>Date:</strong> {selectedJobCard.date}
+                                <strong>Date:</strong> {formatDate(selectedJobCard.date)}
                             </div>
                             <div className="detail-row">
                                 <strong>Plant:</strong> {selectedJobCard.plant_number}

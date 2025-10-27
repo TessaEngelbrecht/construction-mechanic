@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { supabase } from '../utils/supabaseClient';
+import { query } from '../utils/neonClient';
 import { formatPhoneNumber } from '../utils/phoneFormatter';
 
 export default function Login() {
@@ -19,15 +19,18 @@ export default function Login() {
         setError('');
 
         try {
-            // Auto-format phone number
             const formattedPhone = formatPhoneNumber(phone);
 
-            // Check if user exists
-            const { data: userData, error: userError } = await supabase
-                .from('users')
-                .select('*')
-                .eq('phone', formattedPhone)
-                .maybeSingle();
+            // DEBUG: Check what we're searching for
+            console.log('Searching for phone:', formattedPhone);
+
+            const { data: userData, error: userError } = await query`
+      SELECT * FROM users WHERE phone = ${formattedPhone} LIMIT 1
+    `;
+
+            // DEBUG: See what we got back
+            console.log('Query result:', userData);
+            console.log('Query error:', userError);
 
             if (userError) {
                 setError('Error connecting to database. Please try again.');
@@ -35,17 +38,20 @@ export default function Login() {
                 return;
             }
 
-            if (!userData) {
+            // userData is an array, get first item
+            const user = userData && userData.length > 0 ? userData[0] : null;
+
+            if (!user) {
                 setError('User not found. Please check your phone number or sign up first.');
                 setLoading(false);
                 return;
             }
 
             // Store user data
-            localStorage.setItem('currentUser', JSON.stringify(userData));
+            localStorage.setItem('currentUser', JSON.stringify(user));
 
             // Navigate based on user type
-            if (userData.is_admin) {
+            if (user.is_admin) {
                 navigate('/admin');
             } else {
                 navigate('/mechanic');
@@ -57,6 +63,7 @@ export default function Login() {
 
         setLoading(false);
     };
+
 
     return (
         <div className="auth-container">

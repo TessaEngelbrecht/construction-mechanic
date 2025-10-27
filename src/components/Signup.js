@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { supabase } from '../utils/supabaseClient';
+import { query } from '../utils/neonClient';
 import { formatPhoneNumber } from '../utils/phoneFormatter';
 
 export default function Signup() {
@@ -28,35 +28,26 @@ export default function Signup() {
             // Auto-format phone number
             const formattedPhone = formatPhoneNumber(formData.phone);
 
-            // Check if user already exists
-            const { data: existingUser } = await supabase
-                .from('users')
-                .select('*')
-                .eq('phone', formattedPhone)
-                .maybeSingle();
+            // Check if user exists - TAGGED TEMPLATE
+            const { data: existingUser } = await query`
+      SELECT * FROM users WHERE phone = ${formattedPhone} LIMIT 1
+    `;
 
-            if (existingUser) {
+            if (existingUser && existingUser.length > 0) {
                 setError('User with this phone number already exists.');
                 setLoading(false);
                 return;
             }
 
-            // Check if this is the admin phone number
+            // Check if admin
             const isAdmin = formattedPhone === '+27844062222';
 
-            // Insert new user
-            const { error: insertError } = await supabase
-                .from('users')
-                .insert([
-                    {
-                        phone: formattedPhone,
-                        name: formData.name,
-                        email: formData.email,
-                        is_admin: isAdmin
-                    }
-                ])
-                .select()
-                .single();
+            // Insert new user - TAGGED TEMPLATE
+            const { data, error: insertError } = await query`
+      INSERT INTO users (phone, name, email, is_admin)
+      VALUES (${formattedPhone}, ${formData.name}, ${formData.email}, ${isAdmin})
+      RETURNING *
+    `;
 
             if (insertError) {
                 setError('Signup failed. Please try again.');
@@ -72,6 +63,7 @@ export default function Signup() {
 
         setLoading(false);
     };
+
 
     return (
         <div className="auth-container">
