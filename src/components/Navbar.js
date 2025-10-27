@@ -13,7 +13,7 @@ export default function Navbar({ user }) {
         <nav className="navbar">
             <div className="navbar-container">
                 <div className="navbar-brand">
-                    <h3>🏗️ Construction Manager</h3>
+                    <h3>Construction Manager</h3>
                 </div>
                 <div className="navbar-user">
                     <span className="user-name">{user?.name}</span>

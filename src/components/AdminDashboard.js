@@ -453,8 +453,18 @@ export default function AdminDashboard() {
             <div className="page-container">
                 <div className="admin-dashboard">
                     <div className="dashboard-header">
-                        <h2>🏗️ JODAN Construction - Admin Dashboard</h2>
-                        <p>Job Card Management & Fleet Monitoring</p>
+                        <div className="header-content">
+                            <div>
+                                <h2>JODAN Construction - Admin Dashboard</h2>
+                                <p>Job Card Management & Fleet Monitoring</p>
+                            </div>
+                            <button
+                                onClick={() => window.location.href = '/manage-dropdowns'}
+                                className="btn-manage-dropdowns"
+                            >
+                                ⚙️ Manage Dropdowns
+                            </button>
+                        </div>
                     </div>
 
                     {/* Stats Cards */}
