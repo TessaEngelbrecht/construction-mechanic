@@ -195,48 +195,6 @@ export default function ManageDropdowns() {
         setLoading(false);
     };
 
-    // Generic toggle active function
-    const handleToggleActive = async (table, id, currentStatus) => {
-        setLoading(true);
-
-        try {
-            const newStatus = !currentStatus;
-
-            if (table === 'sites') {
-                const { error } = await query`UPDATE sites SET active = ${newStatus} WHERE id = ${id}`;
-                if (error) throw error;
-            } else if (table === 'breakdown_issues') {
-                const { error } = await query`UPDATE breakdown_issues SET active = ${newStatus} WHERE id = ${id}`;
-                if (error) throw error;
-            } else if (table === 'maintenance_issues') {
-                const { error } = await query`UPDATE maintenance_issues SET active = ${newStatus} WHERE id = ${id}`;
-                if (error) throw error;
-            } else if (table === 'service_intervals') {
-                const { error } = await query`UPDATE service_intervals SET active = ${newStatus} WHERE id = ${id}`;
-                if (error) throw error;
-            } else if (table === 'brake_details') {
-                const { error } = await query`UPDATE brake_details SET active = ${newStatus} WHERE id = ${id}`;
-                if (error) throw error;
-            } else if (table === 'battery_positions') {
-                const { error } = await query`UPDATE battery_positions SET active = ${newStatus} WHERE id = ${id}`;
-                if (error) throw error;
-            } else if (table === 'tyre_actions') {
-                const { error } = await query`UPDATE tyre_actions SET active = ${newStatus} WHERE id = ${id}`;
-                if (error) throw error;
-            } else if (table === 'fluid_types') {
-                const { error } = await query`UPDATE fluid_types SET active = ${newStatus} WHERE id = ${id}`;
-                if (error) throw error;
-            }
-
-            showMessage(currentStatus ? 'Item deactivated' : 'Item activated');
-            fetchAllData();
-        } catch (error) {
-            console.error('Toggle error:', error);
-            showMessage('Error toggling status', false);
-        }
-
-        setLoading(false);
-    };
 
     // Generic delete function
     const handleDelete = async (table, id, itemName) => {

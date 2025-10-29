@@ -43,7 +43,7 @@ export default function Signup() {
             const isAdmin = formattedPhone === '+27844062222';
 
             // Insert new user - TAGGED TEMPLATE
-            const { data, error: insertError } = await query`
+            const { error: insertError } = await query`
       INSERT INTO users (phone, name, email, is_admin)
       VALUES (${formattedPhone}, ${formData.name}, ${formData.email}, ${isAdmin})
       RETURNING *
