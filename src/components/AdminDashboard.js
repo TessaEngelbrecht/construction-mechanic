@@ -86,10 +86,34 @@ export default function AdminDashboard() {
 
     const formatDate = (dateValue) => {
         if (!dateValue) return 'N/A';
-        if (dateValue instanceof Date) {
-            return dateValue.toISOString().split('T')[0];
+
+        try {
+            let date;
+
+            // Convert to Date object
+            if (dateValue instanceof Date) {
+                date = dateValue;
+            } else if (typeof dateValue === 'string') {
+                date = new Date(dateValue);
+            } else {
+                date = new Date(dateValue);
+            }
+
+            // Check if valid date
+            if (isNaN(date.getTime())) {
+                return 'N/A';
+            }
+
+            // Format using local timezone (not UTC)
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+
+            return `${year}-${month}-${day}`;
+        } catch (e) {
+            console.error('Date parsing error:', e, dateValue);
+            return 'N/A';
         }
-        return String(dateValue);
     };
 
     const getFilteredLogs = () => {
@@ -98,41 +122,63 @@ export default function AdminDashboard() {
         }
 
         const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const today = `${year}-${month}-${day}`;
+
+        console.log('Current filter:', filter);
+        console.log('Today\'s date:', today);
+        console.log('Total logs:', logs.length);
 
         switch (filter) {
             case 'daily': {
-                // Get today's date in YYYY-MM-DD format
-                const today = now.toISOString().slice(0, 10);
-                return logs.filter((log) => {
-                    const logDate = formatDate(log.date); // This ensures consistent format
-                    return logDate === today;
+                const filtered = logs.filter((log) => {
+                    const logDate = formatDate(log.date);
+                    const matches = logDate === today;
+                    console.log(`Log date: ${logDate}, Today: ${today}, Matches: ${matches}`);
+                    return matches;
                 });
+                console.log('Daily filtered results:', filtered.length);
+                return filtered;
             }
             case 'weekly': {
                 const weekAgo = new Date(now);
                 weekAgo.setDate(weekAgo.getDate() - 7);
-                const weekAgoStr = weekAgo.toISOString().slice(0, 10);
+                const weekYear = weekAgo.getFullYear();
+                const weekMonth = String(weekAgo.getMonth() + 1).padStart(2, '0');
+                const weekDay = String(weekAgo.getDate()).padStart(2, '0');
+                const weekAgoStr = `${weekYear}-${weekMonth}-${weekDay}`;
+
                 return logs.filter((log) => {
                     const logDate = formatDate(log.date);
-                    return logDate >= weekAgoStr && logDate <= now.toISOString().slice(0, 10);
+                    return logDate >= weekAgoStr && logDate <= today;
                 });
             }
             case 'monthly': {
                 const monthAgo = new Date(now);
                 monthAgo.setMonth(monthAgo.getMonth() - 1);
-                const monthAgoStr = monthAgo.toISOString().slice(0, 10);
+                const monthYear = monthAgo.getFullYear();
+                const monthMonth = String(monthAgo.getMonth() + 1).padStart(2, '0');
+                const monthDay = String(monthAgo.getDate()).padStart(2, '0');
+                const monthAgoStr = `${monthYear}-${monthMonth}-${monthDay}`;
+
                 return logs.filter((log) => {
                     const logDate = formatDate(log.date);
-                    return logDate >= monthAgoStr && logDate <= now.toISOString().slice(0, 10);
+                    return logDate >= monthAgoStr && logDate <= today;
                 });
             }
             case 'yearly': {
                 const yearAgo = new Date(now);
                 yearAgo.setFullYear(yearAgo.getFullYear() - 1);
-                const yearAgoStr = yearAgo.toISOString().slice(0, 10);
+                const yearYear = yearAgo.getFullYear();
+                const yearMonth = String(yearAgo.getMonth() + 1).padStart(2, '0');
+                const yearDay = String(yearAgo.getDate()).padStart(2, '0');
+                const yearAgoStr = `${yearYear}-${yearMonth}-${yearDay}`;
+
                 return logs.filter((log) => {
                     const logDate = formatDate(log.date);
-                    return logDate >= yearAgoStr && logDate <= now.toISOString().slice(0, 10);
+                    return logDate >= yearAgoStr && logDate <= today;
                 });
             }
             default:
@@ -141,18 +187,45 @@ export default function AdminDashboard() {
     };
 
 
-    const parseFluids = (fluidsData) => {
+
+    const parseArray = (data) => {
         try {
-            if (typeof fluidsData === 'string') {
-                return JSON.parse(fluidsData);
-            }
-            if (Array.isArray(fluidsData)) {
-                return fluidsData;
-            }
+            if (typeof data === 'string') return JSON.parse(data);
+            if (Array.isArray(data)) return data;
             return [];
         } catch {
             return [];
         }
+    };
+
+    const formatIssuesForDisplay = (log) => {
+        const breakdown = parseArray(log.breakdown_issues_array);
+        const maintenance = parseArray(log.maintenance_issues_array);
+        const tyres = parseArray(log.tyres_array);
+
+        const parts = [];
+
+        if (breakdown.length > 0) {
+            parts.push(breakdown.map(b => b.detail ? `${b.issue} (${b.detail})` : b.issue).join(', '));
+        }
+        if (maintenance.length > 0) {
+            parts.push(maintenance.map(m => {
+                if (m.detail) return `${m.issue} (${m.detail})`;
+                if (m.battery_position) return `${m.issue} (${m.battery_position})`;
+                return m.issue;
+            }).join(', '));
+        }
+        if (tyres.length > 0) {
+            parts.push(tyres.map(t => `Tyre ${t.tyre_number} (${t.action})`).join(', '));
+        }
+        if (log.service_interval) {
+            parts.push(log.service_interval);
+        }
+        if (log.other_description) {
+            parts.push(log.other_description.substring(0, 50) + '...');
+        }
+
+        return parts.join(' | ') || 'N/A';
     };
 
     const approveJobCard = async (jobCardId) => {
@@ -181,7 +254,6 @@ export default function AdminDashboard() {
         doc.setFontSize(18);
         doc.text('JOB CARD', 105, 28, { align: 'center' });
 
-        // Job card number box
         doc.setFontSize(12);
         doc.setFillColor(31, 78, 120);
         doc.rect(150, 35, 50, 10, 'F');
@@ -189,7 +261,6 @@ export default function AdminDashboard() {
         doc.text(log.jobcard_number, 175, 42, { align: 'center' });
         doc.setTextColor(0, 0, 0);
 
-        // Basic Information
         let yPos = 55;
         doc.setFontSize(11);
         doc.setFont(undefined, 'bold');
@@ -200,7 +271,7 @@ export default function AdminDashboard() {
         const basicInfo = [
             ['Date:', formatDate(log.date)],
             ['Site:', log.site_name],
-            ['Plant Number:', `${log.plant_number} ${equipmentInfo ? `(${equipmentInfo.equipment_type})` : ''}`],
+            ['Plant:', `${log.plant_number} ${equipmentInfo ? `(${equipmentInfo.equipment_type})` : ''}`],
             ['Kilos/Hours:', `${log.kilos_hours}h`],
             ['Job Type:', log.job_type],
             ['Mechanic:', worker?.name || 'Unknown']
@@ -219,138 +290,118 @@ export default function AdminDashboard() {
         doc.setFont(undefined, 'bold');
         doc.text('JOB DETAILS', 14, yPos);
         yPos += 8;
-
         doc.setFont(undefined, 'normal');
-        if (log.breakdown_issue) {
-            doc.text(`Breakdown Issue: ${log.breakdown_issue}`, 14, yPos);
-            yPos += 7;
-            if (log.breakdown_detail) {
-                doc.text(`Detail: ${log.breakdown_detail}`, 14, yPos);
-                yPos += 7;
-            }
+
+        const breakdown = parseArray(log.breakdown_issues_array);
+        const maintenance = parseArray(log.maintenance_issues_array);
+        const tyres = parseArray(log.tyres_array);
+
+        if (breakdown.length > 0) {
+            doc.setFont(undefined, 'bold');
+            doc.text('Breakdown Issues:', 14, yPos);
+            yPos += 6;
+            doc.setFont(undefined, 'normal');
+            breakdown.forEach((b, idx) => {
+                const text = b.detail ? `${idx + 1}. ${b.issue} - ${b.detail}` : `${idx + 1}. ${b.issue}`;
+                doc.text(text, 20, yPos);
+                yPos += 6;
+            });
+            yPos += 3;
         }
 
-        if (log.maintenance_issue) {
-            doc.text(`Maintenance Issue: ${log.maintenance_issue}`, 14, yPos);
-            yPos += 7;
-            if (log.maintenance_detail) {
-                doc.text(`Detail: ${log.maintenance_detail}`, 14, yPos);
-                yPos += 7;
-            }
-            if (log.battery_position) {
-                doc.text(`Battery Position: ${log.battery_position}`, 14, yPos);
-                yPos += 7;
-            }
+        if (maintenance.length > 0) {
+            doc.setFont(undefined, 'bold');
+            doc.text('Maintenance Issues:', 14, yPos);
+            yPos += 6;
+            doc.setFont(undefined, 'normal');
+            maintenance.forEach((m, idx) => {
+                let text = `${idx + 1}. ${m.issue}`;
+                if (m.detail) text += ` - ${m.detail}`;
+                if (m.battery_position) text += ` (${m.battery_position})`;
+                doc.text(text, 20, yPos);
+                yPos += 6;
+            });
+            yPos += 3;
+        }
+
+        if (tyres.length > 0) {
+            doc.setFont(undefined, 'bold');
+            doc.text('Tyres:', 14, yPos);
+            yPos += 6;
+            doc.setFont(undefined, 'normal');
+            tyres.forEach((t, idx) => {
+                let text = `${idx + 1}. Tyre #${t.tyre_number} - ${t.action}`;
+                if (t.serial_number) text += ` (SN: ${t.serial_number})`;
+                if (t.swap_from) text += ` from ${t.swap_from}`;
+                doc.text(text, 20, yPos);
+                yPos += 6;
+            });
+            yPos += 3;
         }
 
         if (log.service_interval) {
-            doc.text(`Service Interval: ${log.service_interval}`, 14, yPos);
+            doc.text(`Service: ${log.service_interval}`, 14, yPos);
             yPos += 7;
-        }
-
-        if (log.tyre_number) {
-            doc.text(`Tyre Number: ${log.tyre_number} | Action: ${log.tyre_action}`, 14, yPos);
-            yPos += 7;
-            if (log.tyre_serial_number) {
-                doc.text(`Serial Number: ${log.tyre_serial_number}`, 14, yPos);
-                yPos += 7;
-            }
-            if (log.tyre_swap_from) {
-                doc.text(`Swapped From: ${log.tyre_swap_from}`, 14, yPos);
-                yPos += 7;
-            }
         }
 
         if (log.other_description) {
-            doc.text('Description:', 14, yPos);
-            yPos += 7;
+            doc.text('Other Work:', 14, yPos);
+            yPos += 6;
             const splitText = doc.splitTextToSize(log.other_description, 180);
-            doc.text(splitText, 14, yPos);
-            yPos += (splitText.length * 7);
+            doc.text(splitText, 20, yPos);
+            yPos += (splitText.length * 6);
         }
 
-        // Time Tracking
-        yPos += 5;
-        doc.setFont(undefined, 'bold');
-        doc.text('TIME TRACKING', 14, yPos);
-        yPos += 8;
-
-        doc.setFont(undefined, 'normal');
-        doc.text(`Time Started: ${log.time_started || 'N/A'}`, 14, yPos);
-        doc.text(`Time Ended: ${log.time_ended || 'N/A'}`, 100, yPos);
-        yPos += 7;
-        doc.text(`Duration: ${log.duration || 'N/A'} hours`, 14, yPos);
-        yPos += 7;
-
-        if (log.delay_reason) {
-            doc.text(`Delay Reason: ${log.delay_reason}`, 14, yPos);
-            yPos += 7;
-        }
-
-        // Fluids Used
-        const fluids = parseFluids(log.fluids_used);
-        if (fluids.length > 0) {
-            yPos += 5;
-            if (yPos > 250) {
-                doc.addPage();
-                yPos = 20;
-            }
-
-            doc.setFont(undefined, 'bold');
-            doc.text('FLUIDS & OILS USED', 14, yPos);
-            yPos += 8;
-
-            const fluidData = fluids.map(f => [f.type, `${f.quantity} litres`]);
-            autoTable(doc, {
-                head: [['Fluid Type', 'Quantity']],
-                body: fluidData,
-                startY: yPos,
-                styles: { fontSize: 10 },
-                headStyles: { fillColor: [31, 78, 120] }
-            });
-            yPos = doc.lastAutoTable.finalY + 10;
-        }
-
-        // Work to Plan
-        if (log.work_to_plan) {
-            if (yPos > 250) {
-                doc.addPage();
-                yPos = 20;
-            }
-            doc.setFont(undefined, 'bold');
-            doc.text('WORK TO PLAN', 14, yPos);
-            yPos += 7;
-            doc.setFont(undefined, 'normal');
-            const splitWork = doc.splitTextToSize(log.work_to_plan, 180);
-            doc.text(splitWork, 14, yPos);
-            yPos += (splitWork.length * 7);
-        }
-
-        // Status
-        yPos += 10;
-        if (yPos > 270) {
+        // Time & Fluids
+        if (yPos > 240) {
             doc.addPage();
             yPos = 20;
         }
+
+        yPos += 5;
         doc.setFont(undefined, 'bold');
-        doc.text('STATUS', 14, yPos);
+        doc.text('TIME & RESOURCES', 14, yPos);
         yPos += 7;
         doc.setFont(undefined, 'normal');
-        doc.text(`Approved: ${log.manager_approved ? 'Yes' : 'No'}`, 14, yPos);
-        doc.text(`Status: ${log.status}`, 100, yPos);
+        doc.text(`Time: ${log.time_started || 'N/A'} - ${log.time_ended || 'N/A'} (${log.duration || 'N/A'}h)`, 14, yPos);
+        yPos += 7;
 
-        // Footer
+        if (log.delay_reason) {
+            doc.text(`Delay: ${log.delay_reason}`, 14, yPos);
+            yPos += 7;
+        }
+
+        const fluids = parseArray(log.fluids_used);
+        if (fluids.length > 0) {
+            yPos += 3;
+            doc.setFont(undefined, 'bold');
+            doc.text('Fluids Used:', 14, yPos);
+            yPos += 6;
+            doc.setFont(undefined, 'normal');
+            fluids.forEach(f => {
+                doc.text(`• ${f.type}: ${f.quantity}L`, 20, yPos);
+                yPos += 6;
+            });
+        }
+
+        if (log.work_to_plan) {
+            yPos += 5;
+            doc.setFont(undefined, 'bold');
+            doc.text('Work to Plan:', 14, yPos);
+            yPos += 6;
+            doc.setFont(undefined, 'normal');
+            const splitWork = doc.splitTextToSize(log.work_to_plan, 180);
+            doc.text(splitWork, 14, yPos);
+        }
+
         doc.setFontSize(8);
-        doc.text('Generated by JODAN Construction Management System', 105, 290, { align: 'center' });
-        doc.text(`Generated on: ${new Date().toLocaleString()}`, 105, 285, { align: 'center' });
+        doc.text(`Generated: ${new Date().toLocaleString()}`, 105, 290, { align: 'center' });
 
-        // Save PDF
         doc.save(`JobCard_${log.jobcard_number}_${log.plant_number}.pdf`);
 
-        // Mark as downloaded
         await query`
-      UPDATE work_logs
-      SET downloaded = ${true},
+      UPDATE work_logs 
+      SET downloaded = ${true}, 
           downloaded_at = ${new Date().toISOString()},
           downloaded_by = ${user.id},
           status = ${log.manager_approved ? 'completed' : 'pending'}
@@ -365,32 +416,34 @@ export default function AdminDashboard() {
 
         const excelData = filteredLogs.map((log) => {
             const worker = users.find((u) => u.id === log.user_id);
-            const fluids = parseFluids(log.fluids_used);
-            const fluidsText = fluids.map(f => `${f.type}: ${f.quantity}L`).join('; ');
+            const breakdown = parseArray(log.breakdown_issues_array);
+            const maintenance = parseArray(log.maintenance_issues_array);
+            const tyres = parseArray(log.tyres_array);
+            const fluids = parseArray(log.fluids_used);
 
             return {
                 'Job Card #': log.jobcard_number,
                 'Date': formatDate(log.date),
                 'Site': log.site_name,
-                'Plant Number': log.plant_number,
+                'Plant': log.plant_number,
                 'Kilos/Hours': log.kilos_hours,
                 'Job Type': log.job_type,
-                'Breakdown Issue': log.breakdown_issue || '',
-                'Breakdown Detail': log.breakdown_detail || '',
-                'Maintenance Issue': log.maintenance_issue || '',
-                'Maintenance Detail': log.maintenance_detail || '',
-                'Battery Position': log.battery_position || '',
-                'Service Interval': log.service_interval || '',
-                'Tyre Number': log.tyre_number || '',
-                'Tyre Action': log.tyre_action || '',
-                'Other Description': log.other_description || '',
-                'Work to Plan': log.work_to_plan || '',
+                'Breakdown Issues': breakdown.map(b => b.detail ? `${b.issue} (${b.detail})` : b.issue).join('; '),
+                'Maintenance Issues': maintenance.map(m => {
+                    if (m.detail) return `${m.issue} (${m.detail})`;
+                    if (m.battery_position) return `${m.issue} (${m.battery_position})`;
+                    return m.issue;
+                }).join('; '),
+                'Tyres': tyres.map(t => `#${t.tyre_number} ${t.action}`).join('; '),
+                'Service': log.service_interval || '',
+                'Other': log.other_description || '',
                 'Mechanic': worker?.name || 'Unknown',
                 'Time Started': log.time_started || '',
                 'Time Ended': log.time_ended || '',
                 'Duration (hrs)': log.duration || '',
-                'Delay Reason': log.delay_reason || '',
-                'Fluids Used': fluidsText,
+                'Delay': log.delay_reason || '',
+                'Fluids': fluids.map(f => `${f.type}: ${f.quantity}L`).join('; '),
+                'Work to Plan': log.work_to_plan || '',
                 'Status': log.status,
                 'Approved': log.manager_approved ? 'Yes' : 'No',
                 'Downloaded': log.downloaded ? 'Yes' : 'No'
@@ -399,33 +452,11 @@ export default function AdminDashboard() {
 
         const worksheet = XLSX.utils.json_to_sheet(excelData);
 
-        // Set column widths
         const columnWidths = [
-            { wch: 15 }, // Job Card #
-            { wch: 12 }, // Date
-            { wch: 15 }, // Site
-            { wch: 12 }, // Plant Number
-            { wch: 12 }, // Kilos/Hours
-            { wch: 12 }, // Job Type
-            { wch: 18 }, // Breakdown Issue
-            { wch: 15 }, // Breakdown Detail
-            { wch: 18 }, // Maintenance Issue
-            { wch: 15 }, // Maintenance Detail
-            { wch: 15 }, // Battery Position
-            { wch: 15 }, // Service Interval
-            { wch: 12 }, // Tyre Number
-            { wch: 12 }, // Tyre Action
-            { wch: 30 }, // Other Description
-            { wch: 30 }, // Work to Plan
-            { wch: 20 }, // Mechanic
-            { wch: 12 }, // Time Started
-            { wch: 12 }, // Time Ended
-            { wch: 12 }, // Duration
-            { wch: 25 }, // Delay Reason
-            { wch: 40 }, // Fluids Used
-            { wch: 12 }, // Status
-            { wch: 10 }, // Approved
-            { wch: 12 }  // Downloaded
+            { wch: 15 }, { wch: 12 }, { wch: 15 }, { wch: 12 }, { wch: 12 },
+            { wch: 12 }, { wch: 30 }, { wch: 30 }, { wch: 25 }, { wch: 15 },
+            { wch: 30 }, { wch: 20 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
+            { wch: 25 }, { wch: 40 }, { wch: 30 }, { wch: 12 }, { wch: 10 }, { wch: 12 }
         ];
         worksheet['!cols'] = columnWidths;
 
@@ -455,14 +486,14 @@ export default function AdminDashboard() {
                     <div className="dashboard-header">
                         <div className="header-content">
                             <div>
-                                <h2>JODAN Construction - Admin Dashboard</h2>
+                                <h2>🏗️ JODAN Construction - Admin Dashboard</h2>
                                 <p>Job Card Management & Fleet Monitoring</p>
                             </div>
                             <button
                                 onClick={() => window.location.href = '/manage-dropdowns'}
                                 className="btn-manage-dropdowns"
                             >
-                                ⚙️ Manage Dropdowns
+                                ⚙️ Manage Options
                             </button>
                         </div>
                     </div>
@@ -508,7 +539,7 @@ export default function AdminDashboard() {
                             <div className="stat-icon">⏳</div>
                             <div className="stat-content">
                                 <h3>{stats.pendingApproval}</h3>
-                                <p>Pending Approval</p>
+                                <p>Pending</p>
                             </div>
                         </div>
                         <div className="stat-card completed-card">
@@ -520,67 +551,41 @@ export default function AdminDashboard() {
                         </div>
                     </div>
 
-                    {/* Filters and Export */}
+                    {/* Filters */}
                     <div className="filter-section">
                         <div className="filter-buttons">
-                            <button
-                                className={filter === 'all' ? 'active' : ''}
-                                onClick={() => setFilter('all')}
-                            >
-                                All Time
-                            </button>
-                            <button
-                                className={filter === 'daily' ? 'active' : ''}
-                                onClick={() => setFilter('daily')}
-                            >
-                                Daily
-                            </button>
-                            <button
-                                className={filter === 'weekly' ? 'active' : ''}
-                                onClick={() => setFilter('weekly')}
-                            >
-                                Weekly
-                            </button>
-                            <button
-                                className={filter === 'monthly' ? 'active' : ''}
-                                onClick={() => setFilter('monthly')}
-                            >
-                                Monthly
-                            </button>
-                            <button
-                                className={filter === 'yearly' ? 'active' : ''}
-                                onClick={() => setFilter('yearly')}
-                            >
-                                Yearly
-                            </button>
+                            {['all', 'daily', 'weekly', 'monthly', 'yearly'].map(f => (
+                                <button
+                                    key={f}
+                                    className={filter === f ? 'active' : ''}
+                                    onClick={() => setFilter(f)}
+                                >
+                                    {f.charAt(0).toUpperCase() + f.slice(1)}
+                                </button>
+                            ))}
                         </div>
                         <button onClick={exportToExcel} className="btn-export-excel">
-                            📊 Export to Excel
+                            📊 Export Excel
                         </button>
                     </div>
 
                     {/* Charts */}
-                    <SummaryCharts
-                        logs={filteredLogs}
-                        users={users}
-                        equipment={equipment}
-                        filter={filter}
-                    />
+                    <SummaryCharts logs={filteredLogs} users={users} equipment={equipment} filter={filter} />
 
                     {/* Job Cards Table */}
                     <div className="logs-section">
                         <h3>📋 Job Cards ({filteredLogs.length})</h3>
-                        <div className="table-container">
+                        <div className="table-responsive">
                             <table className="logs-table">
                                 <thead>
                                     <tr>
                                         <th>Job Card #</th>
                                         <th>Date</th>
-                                        <th>Site</th>
+                                        <th className="hide-mobile">Site</th>
                                         <th>Plant</th>
-                                        <th>Kilos/Hrs</th>
-                                        <th>Type</th>
-                                        <th>Mechanic</th>
+                                        <th className="hide-mobile">Type</th>
+                                        <th className="hide-tablet">Details</th>
+                                        <th className="hide-mobile">Mechanic</th>
                                         <th>Duration</th>
                                         <th>Status</th>
                                         <th>Actions</th>
@@ -589,9 +594,7 @@ export default function AdminDashboard() {
                                 <tbody>
                                     {filteredLogs.length === 0 ? (
                                         <tr>
-                                            <td colSpan="10" className="no-data">
-                                                No job cards found for the selected filter.
-                                            </td>
+                                            <td colSpan="10" className="no-data">No job cards found</td>
                                         </tr>
                                     ) : (
                                         filteredLogs.map((log) => {
@@ -599,36 +602,36 @@ export default function AdminDashboard() {
                                             const isCompleted = log.status === 'completed' && log.manager_approved && log.downloaded;
 
                                             return (
-                                                <tr key={log.id} className={log.job_type === 'Breakdown' ? 'breakdown-row' : ''}>
+                                                <tr key={log.id}>
                                                     <td>
                                                         <strong className="jobcard-link" onClick={() => setSelectedJobCard(log)}>
                                                             {log.jobcard_number}
                                                         </strong>
                                                     </td>
                                                     <td>{formatDate(log.date)}</td>
-                                                    <td>{log.site_name}</td>
+                                                    <td className="hide-mobile">{log.site_name}</td>
                                                     <td><strong>{log.plant_number}</strong></td>
-                                                    <td>{log.kilos_hours}h</td>
-                                                    <td>
+                                                    <td className="hide-mobile">
                                                         <span className={`type-badge ${log.job_type.toLowerCase()}`}>
                                                             {log.job_type}
                                                         </span>
                                                     </td>
-                                                    <td>{worker?.name || 'Unknown'}</td>
+                                                    <td className="hide-tablet details-cell">{formatIssuesForDisplay(log)}</td>
+                                                    <td className="hide-mobile">{worker?.name || 'Unknown'}</td>
                                                     <td><strong>{log.duration ? log.duration + 'h' : 'N/A'}</strong></td>
                                                     <td>
                                                         {isCompleted ? (
-                                                            <span className="status-badge completed">✓ Completed</span>
+                                                            <span className="status-badge completed">✓</span>
                                                         ) : log.manager_approved ? (
-                                                            <span className="status-badge approved">✓ Approved</span>
+                                                            <span className="status-badge approved">✓</span>
                                                         ) : (
-                                                            <span className="status-badge pending">⏳ Pending</span>
+                                                            <span className="status-badge pending">⏳</span>
                                                         )}
                                                     </td>
                                                     <td className="action-buttons">
                                                         {!log.manager_approved && (
                                                             <button
-                                                                className="btn-approve"
+                                                                className="btn-action btn-approve"
                                                                 onClick={() => approveJobCard(log.id)}
                                                                 title="Approve"
                                                             >
@@ -636,7 +639,7 @@ export default function AdminDashboard() {
                                                             </button>
                                                         )}
                                                         <button
-                                                            className="btn-download"
+                                                            className="btn-action btn-download"
                                                             onClick={() => downloadIndividualJobCardPDF(log)}
                                                             title="Download PDF"
                                                         >
@@ -652,50 +655,46 @@ export default function AdminDashboard() {
                         </div>
                     </div>
 
-                    {/* Fleet Status Overview */}
+                    {/* Fleet Overview */}
                     <div className="fleet-section">
-                        <h3>🚜 Fleet Status Overview</h3>
+                        <h3>🚜 Fleet Status</h3>
                         <div className="fleet-grid">
-                            {equipment.length === 0 ? (
-                                <p className="no-data">No equipment data available.</p>
-                            ) : (
-                                equipment.map((plant) => {
-                                    const recentJobs = logs.filter(log => log.plant_number === plant.plant_number).length;
-                                    const lastJob = logs.find(log => log.plant_number === plant.plant_number);
+                            {equipment.map((plant) => {
+                                const recentJobs = logs.filter(log => log.plant_number === plant.plant_number).length;
+                                const lastJob = logs.find(log => log.plant_number === plant.plant_number);
 
-                                    return (
-                                        <div key={plant.id} className="fleet-card">
-                                            <div className="fleet-header">
-                                                <strong>{plant.plant_number}</strong>
-                                                <span className={`fleet-status ${plant.status}`}>{plant.status}</span>
-                                            </div>
-                                            <p className="fleet-type">{plant.equipment_type}</p>
-                                            <p className="fleet-model">{plant.make_model}</p>
-                                            <div className="fleet-stats">
-                                                <div className="fleet-stat">
-                                                    <span className="label">Kilos/Hours:</span>
-                                                    <span className="value">{plant.current_kilos_hours}h</span>
-                                                </div>
-                                                <div className="fleet-stat">
-                                                    <span className="label">Jobs:</span>
-                                                    <span className="value">{recentJobs}</span>
-                                                </div>
-                                            </div>
-                                            {lastJob && (
-                                                <p className="fleet-last-service">
-                                                    Last service: {formatDate(lastJob.date)}
-                                                </p>
-                                            )}
+                                return (
+                                    <div key={plant.id} className="fleet-card">
+                                        <div className="fleet-header">
+                                            <strong>{plant.plant_number}</strong>
+                                            <span className={`fleet-status ${plant.status}`}>{plant.status}</span>
                                         </div>
-                                    );
-                                })
-                            )}
+                                        <p className="fleet-type">{plant.equipment_type}</p>
+                                        <p className="fleet-model">{plant.make_model}</p>
+                                        <div className="fleet-stats">
+                                            <div className="fleet-stat">
+                                                <span className="label">Hours:</span>
+                                                <span className="value">{plant.current_kilos_hours}h</span>
+                                            </div>
+                                            <div className="fleet-stat">
+                                                <span className="label">Jobs:</span>
+                                                <span className="value">{recentJobs}</span>
+                                            </div>
+                                        </div>
+                                        {lastJob && (
+                                            <p className="fleet-last-service">
+                                                Last: {formatDate(lastJob.date)}
+                                            </p>
+                                        )}
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
                 </div>
             </div>
 
-            {/* Job Card Detail Modal */}
+            {/* Modal */}
             {selectedJobCard && (
                 <div className="modal-overlay" onClick={() => setSelectedJobCard(null)}>
                     <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -717,7 +716,7 @@ export default function AdminDashboard() {
                                 <strong>Plant:</strong> {selectedJobCard.plant_number}
                             </div>
                             <div className="detail-row">
-                                <strong>Kilos/Hours:</strong> {selectedJobCard.kilos_hours} hours
+                                <strong>Kilos/Hours:</strong> {selectedJobCard.kilos_hours}h
                             </div>
                             <div className="detail-row">
                                 <strong>Job Type:</strong> {selectedJobCard.job_type}
@@ -726,67 +725,56 @@ export default function AdminDashboard() {
                                 <strong>Mechanic:</strong> {users.find(u => u.id === selectedJobCard.user_id)?.name}
                             </div>
 
-                            {selectedJobCard.breakdown_issue && (
-                                <>
-                                    <div className="detail-row">
-                                        <strong>Breakdown Issue:</strong> {selectedJobCard.breakdown_issue}
-                                    </div>
-                                    {selectedJobCard.breakdown_detail && (
-                                        <div className="detail-row">
-                                            <strong>Detail:</strong> {selectedJobCard.breakdown_detail}
-                                        </div>
-                                    )}
-                                </>
+                            {parseArray(selectedJobCard.breakdown_issues_array).length > 0 && (
+                                <div className="detail-section">
+                                    <strong>Breakdown Issues:</strong>
+                                    <ul className="issues-list">
+                                        {parseArray(selectedJobCard.breakdown_issues_array).map((b, idx) => (
+                                            <li key={idx}>{b.detail ? `${b.issue} - ${b.detail}` : b.issue}</li>
+                                        ))}
+                                    </ul>
+                                </div>
                             )}
 
-                            {selectedJobCard.maintenance_issue && (
-                                <>
-                                    <div className="detail-row">
-                                        <strong>Maintenance Issue:</strong> {selectedJobCard.maintenance_issue}
-                                    </div>
-                                    {selectedJobCard.maintenance_detail && (
-                                        <div className="detail-row">
-                                            <strong>Detail:</strong> {selectedJobCard.maintenance_detail}
-                                        </div>
-                                    )}
-                                    {selectedJobCard.battery_position && (
-                                        <div className="detail-row">
-                                            <strong>Battery Position:</strong> {selectedJobCard.battery_position}
-                                        </div>
-                                    )}
-                                </>
+                            {parseArray(selectedJobCard.maintenance_issues_array).length > 0 && (
+                                <div className="detail-section">
+                                    <strong>Maintenance Issues:</strong>
+                                    <ul className="issues-list">
+                                        {parseArray(selectedJobCard.maintenance_issues_array).map((m, idx) => (
+                                            <li key={idx}>
+                                                {m.issue}
+                                                {m.detail && ` - ${m.detail}`}
+                                                {m.battery_position && ` (${m.battery_position})`}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+
+                            {parseArray(selectedJobCard.tyres_array).length > 0 && (
+                                <div className="detail-section">
+                                    <strong>Tyres:</strong>
+                                    <ul className="issues-list">
+                                        {parseArray(selectedJobCard.tyres_array).map((t, idx) => (
+                                            <li key={idx}>
+                                                Tyre #{t.tyre_number} - {t.action}
+                                                {t.serial_number && ` (SN: ${t.serial_number})`}
+                                                {t.swap_from && ` from ${t.swap_from}`}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
                             )}
 
                             {selectedJobCard.service_interval && (
                                 <div className="detail-row">
-                                    <strong>Service Interval:</strong> {selectedJobCard.service_interval}
+                                    <strong>Service:</strong> {selectedJobCard.service_interval}
                                 </div>
-                            )}
-
-                            {selectedJobCard.tyre_number && (
-                                <>
-                                    <div className="detail-row">
-                                        <strong>Tyre Number:</strong> {selectedJobCard.tyre_number}
-                                    </div>
-                                    <div className="detail-row">
-                                        <strong>Tyre Action:</strong> {selectedJobCard.tyre_action}
-                                    </div>
-                                    {selectedJobCard.tyre_serial_number && (
-                                        <div className="detail-row">
-                                            <strong>Serial Number:</strong> {selectedJobCard.tyre_serial_number}
-                                        </div>
-                                    )}
-                                    {selectedJobCard.tyre_swap_from && (
-                                        <div className="detail-row">
-                                            <strong>Swapped From:</strong> {selectedJobCard.tyre_swap_from}
-                                        </div>
-                                    )}
-                                </>
                             )}
 
                             {selectedJobCard.other_description && (
                                 <div className="detail-section">
-                                    <strong>Description:</strong>
+                                    <strong>Other Work:</strong>
                                     <p>{selectedJobCard.other_description}</p>
                                 </div>
                             )}
@@ -799,41 +787,27 @@ export default function AdminDashboard() {
                             )}
 
                             <div className="detail-row">
-                                <strong>Time Started:</strong> {selectedJobCard.time_started || 'N/A'}
+                                <strong>Time:</strong> {selectedJobCard.time_started} - {selectedJobCard.time_ended} ({selectedJobCard.duration}h)
                             </div>
-                            <div className="detail-row">
-                                <strong>Time Ended:</strong> {selectedJobCard.time_ended || 'N/A'}
-                            </div>
-                            <div className="detail-row">
-                                <strong>Duration:</strong> {selectedJobCard.duration ? selectedJobCard.duration + ' hours' : 'N/A'}
-                            </div>
+
                             {selectedJobCard.delay_reason && (
                                 <div className="detail-section alert">
-                                    <strong>⚠️ Delay Reason:</strong>
+                                    <strong>⚠️ Delay:</strong>
                                     <p>{selectedJobCard.delay_reason}</p>
                                 </div>
                             )}
-                            {parseFluids(selectedJobCard.fluids_used).length > 0 && (
+
+                            {parseArray(selectedJobCard.fluids_used).length > 0 && (
                                 <div className="detail-section">
-                                    <strong>Fluids/Oils Used:</strong>
-                                    <table className="fluids-table">
-                                        <thead>
-                                            <tr>
-                                                <th>Type</th>
-                                                <th>Quantity</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {parseFluids(selectedJobCard.fluids_used).map((fluid, idx) => (
-                                                <tr key={idx}>
-                                                    <td>{fluid.type}</td>
-                                                    <td>{fluid.quantity} litres</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
+                                    <strong>Fluids Used:</strong>
+                                    <ul className="issues-list">
+                                        {parseArray(selectedJobCard.fluids_used).map((f, idx) => (
+                                            <li key={idx}>{f.type}: {f.quantity} litres</li>
+                                        ))}
+                                    </ul>
                                 </div>
                             )}
+
                             <div className="detail-row">
                                 <strong>Status:</strong>
                                 <span className={`status-badge ${selectedJobCard.status === 'completed' && selectedJobCard.manager_approved && selectedJobCard.downloaded
@@ -859,7 +833,7 @@ export default function AdminDashboard() {
                                         setSelectedJobCard(null);
                                     }}
                                 >
-                                    Approve Job Card
+                                    Approve
                                 </button>
                             )}
                             <button
