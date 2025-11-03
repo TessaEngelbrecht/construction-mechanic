@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { supabase } from '../utils/supabaseClient';
+import { query } from '../utils/neonClient';
 import SummaryCharts from './SummaryCharts';
 import Navbar from './Navbar';
 import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+//import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
+import 'jspdf-autotable';
 
 export default function AdminDashboard() {
     const [user, setUser] = useState(null);
@@ -19,7 +21,8 @@ export default function AdminDashboard() {
         breakdownCount: 0,
         maintenanceCount: 0,
         avgDuration: 0,
-        pendingApproval: 0
+        pendingApproval: 0,
+        completedCount: 0
     });
 
     useEffect(() => {
@@ -36,24 +39,29 @@ export default function AdminDashboard() {
     const fetchData = async () => {
         setLoading(true);
 
-        const { data: logsData } = await supabase
-            .from('work_logs')
-            .select('*')
-            .order('date', { ascending: false });
+        try {
+            const { data: logsData } = await query`
+        SELECT * FROM work_logs ORDER BY date DESC, created_at DESC
+      `;
 
-        const { data: usersData } = await supabase
-            .from('users')
-            .select('*')
-            .order('name');
+            const { data: usersData } = await query`
+        SELECT * FROM users ORDER BY name
+      `;
 
-        const { data: equipmentData } = await supabase
-            .from('equipment')
-            .select('*')
-            .order('plant_number');
+            const { data: equipmentData } = await query`
+        SELECT * FROM equipment ORDER BY plant_number
+      `;
 
-        setLogs(logsData || []);
-        setUsers(usersData || []);
-        setEquipment(equipmentData || []);
+            setLogs(Array.isArray(logsData) ? logsData : []);
+            setUsers(Array.isArray(usersData) ? usersData : []);
+            setEquipment(Array.isArray(equipmentData) ? equipmentData : []);
+        } catch (error) {
+            console.error('Error fetching data:', error);
+            setLogs([]);
+            setUsers([]);
+            setEquipment([]);
+        }
+
         setLoading(false);
     };
 
@@ -64,6 +72,7 @@ export default function AdminDashboard() {
         const maintenanceCount = logs.filter(log => log.job_type === 'Maintenance').length;
         const avgDuration = totalJobCards > 0 ? (totalHours / totalJobCards).toFixed(1) : 0;
         const pendingApproval = logs.filter(log => !log.manager_approved).length;
+        const completedCount = logs.filter(log => log.status === 'completed' && log.manager_approved && log.downloaded).length;
 
         setStats({
             totalHours: totalHours.toFixed(1),
@@ -71,50 +80,159 @@ export default function AdminDashboard() {
             breakdownCount,
             maintenanceCount,
             avgDuration,
-            pendingApproval
+            pendingApproval,
+            completedCount
         });
     };
 
+    const formatDate = (dateValue) => {
+        if (!dateValue) return 'N/A';
+
+        try {
+            let date;
+
+            // Convert to Date object
+            if (dateValue instanceof Date) {
+                date = dateValue;
+            } else if (typeof dateValue === 'string') {
+                date = new Date(dateValue);
+            } else {
+                date = new Date(dateValue);
+            }
+
+            // Check if valid date
+            if (isNaN(date.getTime())) {
+                return 'N/A';
+            }
+
+            // Format using local timezone (not UTC)
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+
+            return `${year}-${month}-${day}`;
+        } catch (e) {
+            console.error('Date parsing error:', e, dateValue);
+            return 'N/A';
+        }
+    };
+
     const getFilteredLogs = () => {
+        if (!Array.isArray(logs) || logs.length === 0) {
+            return [];
+        }
+
         const now = new Date();
-        const today = now.toISOString().slice(0, 10);
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const today = `${year}-${month}-${day}`;
+
+        console.log('Current filter:', filter);
+        console.log('Today\'s date:', today);
+        console.log('Total logs:', logs.length);
 
         switch (filter) {
-            case 'daily':
-                return logs.filter((log) => log.date === today);
-            case 'weekly':
-                const weekAgo = new Date(now.setDate(now.getDate() - 7)).toISOString().slice(0, 10);
-                return logs.filter((log) => log.date >= weekAgo);
-            case 'monthly':
-                const monthAgo = new Date(now.setMonth(now.getMonth() - 1)).toISOString().slice(0, 10);
-                return logs.filter((log) => log.date >= monthAgo);
-            case 'yearly':
-                const yearAgo = new Date(now.setFullYear(now.getFullYear() - 1)).toISOString().slice(0, 10);
-                return logs.filter((log) => log.date >= yearAgo);
+            case 'daily': {
+                const filtered = logs.filter((log) => {
+                    const logDate = formatDate(log.date);
+                    const matches = logDate === today;
+                    console.log(`Log date: ${logDate}, Today: ${today}, Matches: ${matches}`);
+                    return matches;
+                });
+                console.log('Daily filtered results:', filtered.length);
+                return filtered;
+            }
+            case 'weekly': {
+                const weekAgo = new Date(now);
+                weekAgo.setDate(weekAgo.getDate() - 7);
+                const weekYear = weekAgo.getFullYear();
+                const weekMonth = String(weekAgo.getMonth() + 1).padStart(2, '0');
+                const weekDay = String(weekAgo.getDate()).padStart(2, '0');
+                const weekAgoStr = `${weekYear}-${weekMonth}-${weekDay}`;
+
+                return logs.filter((log) => {
+                    const logDate = formatDate(log.date);
+                    return logDate >= weekAgoStr && logDate <= today;
+                });
+            }
+            case 'monthly': {
+                const monthAgo = new Date(now);
+                monthAgo.setMonth(monthAgo.getMonth() - 1);
+                const monthYear = monthAgo.getFullYear();
+                const monthMonth = String(monthAgo.getMonth() + 1).padStart(2, '0');
+                const monthDay = String(monthAgo.getDate()).padStart(2, '0');
+                const monthAgoStr = `${monthYear}-${monthMonth}-${monthDay}`;
+
+                return logs.filter((log) => {
+                    const logDate = formatDate(log.date);
+                    return logDate >= monthAgoStr && logDate <= today;
+                });
+            }
+            case 'yearly': {
+                const yearAgo = new Date(now);
+                yearAgo.setFullYear(yearAgo.getFullYear() - 1);
+                const yearYear = yearAgo.getFullYear();
+                const yearMonth = String(yearAgo.getMonth() + 1).padStart(2, '0');
+                const yearDay = String(yearAgo.getDate()).padStart(2, '0');
+                const yearAgoStr = `${yearYear}-${yearMonth}-${yearDay}`;
+
+                return logs.filter((log) => {
+                    const logDate = formatDate(log.date);
+                    return logDate >= yearAgoStr && logDate <= today;
+                });
+            }
             default:
                 return logs;
         }
     };
 
-    const parseFluids = (fluidsData) => {
+
+
+    const parseArray = (data) => {
         try {
-            if (typeof fluidsData === 'string') {
-                return JSON.parse(fluidsData);
-            }
-            if (Array.isArray(fluidsData)) {
-                return fluidsData;
-            }
+            if (typeof data === 'string') return JSON.parse(data);
+            if (Array.isArray(data)) return data;
             return [];
         } catch {
             return [];
         }
     };
 
+    const formatIssuesForDisplay = (log) => {
+        const breakdown = parseArray(log.breakdown_issues_array);
+        const maintenance = parseArray(log.maintenance_issues_array);
+        const tyres = parseArray(log.tyres_array);
+
+        const parts = [];
+
+        if (breakdown.length > 0) {
+            parts.push(breakdown.map(b => b.detail ? `${b.issue} (${b.detail})` : b.issue).join(', '));
+        }
+        if (maintenance.length > 0) {
+            parts.push(maintenance.map(m => {
+                if (m.detail) return `${m.issue} (${m.detail})`;
+                if (m.battery_position) return `${m.issue} (${m.battery_position})`;
+                return m.issue;
+            }).join(', '));
+        }
+        if (tyres.length > 0) {
+            parts.push(tyres.map(t => `Tyre ${t.tyre_number} (${t.action})`).join(', '));
+        }
+        if (log.service_interval) {
+            parts.push(log.service_interval);
+        }
+        if (log.other_description) {
+            parts.push(log.other_description.substring(0, 50) + '...');
+        }
+
+        return parts.join(' | ') || 'N/A';
+    };
+
     const approveJobCard = async (jobCardId) => {
-        const { error } = await supabase
-            .from('work_logs')
-            .update({ manager_approved: true })
-            .eq('id', jobCardId);
+        const { error } = await query`
+      UPDATE work_logs SET manager_approved = ${true} WHERE id = ${jobCardId}
+    `;
 
         if (!error) {
             fetchData();
@@ -124,87 +242,230 @@ export default function AdminDashboard() {
         }
     };
 
-    const exportToPDF = () => {
+    const downloadIndividualJobCardPDF = async (log) => {
         const doc = new jsPDF();
-        const filteredLogs = getFilteredLogs();
+        const worker = users.find((u) => u.id === log.user_id);
+        const equipmentInfo = equipment.find((eq) => eq.plant_number === log.plant_number);
 
-        // Add header
-        doc.setFontSize(20);
+        // Header
+        doc.setFontSize(22);
         doc.setFont(undefined, 'bold');
-        doc.text('JODAN Construction', 14, 20);
-        doc.setFontSize(16);
-        doc.text('Job Card Summary Report', 14, 28);
+        doc.text('JODAN CONSTRUCTION', 105, 20, { align: 'center' });
 
-        // Add metadata
-        doc.setFontSize(10);
+        doc.setFontSize(18);
+        doc.text('JOB CARD', 105, 28, { align: 'center' });
+
+        doc.setFontSize(12);
+        doc.setFillColor(31, 78, 120);
+        doc.rect(150, 35, 50, 10, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.text(log.jobcard_number, 175, 42, { align: 'center' });
+        doc.setTextColor(0, 0, 0);
+
+        let yPos = 55;
+        doc.setFontSize(11);
+        doc.setFont(undefined, 'bold');
+        doc.text('BASIC INFORMATION', 14, yPos);
+        yPos += 8;
+
         doc.setFont(undefined, 'normal');
-        doc.text(`Filter: ${filter.charAt(0).toUpperCase() + filter.slice(1)}`, 14, 36);
-        doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 41);
-        doc.text(`Total Job Cards: ${filteredLogs.length} | Total Hours: ${stats.totalHours}h`, 14, 46);
-        doc.text(`Breakdowns: ${stats.breakdownCount} | Maintenance: ${stats.maintenanceCount}`, 14, 51);
+        const basicInfo = [
+            ['Date:', formatDate(log.date)],
+            ['Site:', log.site_name],
+            ['Plant:', `${log.plant_number} ${equipmentInfo ? `(${equipmentInfo.equipment_type})` : ''}`],
+            ['Kilos/Hours:', `${log.kilos_hours}h`],
+            ['Job Type:', log.job_type],
+            ['Mechanic:', worker?.name || 'Unknown']
+        ];
 
-        // Prepare table data
-        const tableData = filteredLogs.map((log) => {
-            const worker = users.find((u) => u.id === log.user_id);
-
-            return [
-                log.jobcard_number || 'N/A',
-                log.date,
-                log.plant_number,
-                log.smr,
-                worker?.name || 'Unknown',
-                log.job_type,
-                log.description.length > 30 ? log.description.substring(0, 30) + '...' : log.description,
-                log.duration ? log.duration + 'h' : 'N/A',
-                log.manager_approved ? 'Yes' : 'No'
-            ];
+        basicInfo.forEach(([label, value]) => {
+            doc.setFont(undefined, 'bold');
+            doc.text(label, 14, yPos);
+            doc.setFont(undefined, 'normal');
+            doc.text(value, 60, yPos);
+            yPos += 7;
         });
 
-        // Add table
-        autoTable(doc, {
-            head: [['Job Card', 'Date', 'Plant', 'SMR', 'Mechanic', 'Type', 'Description', 'Duration', 'Approved']],
-            body: tableData,
-            startY: 56,
-            styles: {
-                fontSize: 8,
-                cellPadding: 2
-            },
-            headStyles: {
-                fillColor: [31, 78, 120],
-                textColor: [255, 255, 255],
-                fontStyle: 'bold'
-            },
-            alternateRowStyles: {
-                fillColor: [245, 247, 250]
-            },
-            columnStyles: {
-                0: { cellWidth: 20 },
-                1: { cellWidth: 20 },
-                2: { cellWidth: 15 },
-                3: { cellWidth: 15 },
-                4: { cellWidth: 25 },
-                5: { cellWidth: 20 },
-                6: { cellWidth: 35 },
-                7: { cellWidth: 15 },
-                8: { cellWidth: 15 }
-            }
-        });
+        // Job Details
+        yPos += 5;
+        doc.setFont(undefined, 'bold');
+        doc.text('JOB DETAILS', 14, yPos);
+        yPos += 8;
+        doc.setFont(undefined, 'normal');
 
-        // Add footer with page numbers
-        const pageCount = doc.internal.getNumberOfPages();
-        for (let i = 1; i <= pageCount; i++) {
-            doc.setPage(i);
-            doc.setFontSize(8);
-            doc.text(
-                `Page ${i} of ${pageCount}`,
-                doc.internal.pageSize.getWidth() / 2,
-                doc.internal.pageSize.getHeight() - 10,
-                { align: 'center' }
-            );
+        const breakdown = parseArray(log.breakdown_issues_array);
+        const maintenance = parseArray(log.maintenance_issues_array);
+        const tyres = parseArray(log.tyres_array);
+
+        if (breakdown.length > 0) {
+            doc.setFont(undefined, 'bold');
+            doc.text('Breakdown Issues:', 14, yPos);
+            yPos += 6;
+            doc.setFont(undefined, 'normal');
+            breakdown.forEach((b, idx) => {
+                const text = b.detail ? `${idx + 1}. ${b.issue} - ${b.detail}` : `${idx + 1}. ${b.issue}`;
+                doc.text(text, 20, yPos);
+                yPos += 6;
+            });
+            yPos += 3;
         }
 
-        // Save the PDF
-        doc.save(`jodan_jobcards_${filter}_${new Date().toISOString().slice(0, 10)}.pdf`);
+        if (maintenance.length > 0) {
+            doc.setFont(undefined, 'bold');
+            doc.text('Maintenance Issues:', 14, yPos);
+            yPos += 6;
+            doc.setFont(undefined, 'normal');
+            maintenance.forEach((m, idx) => {
+                let text = `${idx + 1}. ${m.issue}`;
+                if (m.detail) text += ` - ${m.detail}`;
+                if (m.battery_position) text += ` (${m.battery_position})`;
+                doc.text(text, 20, yPos);
+                yPos += 6;
+            });
+            yPos += 3;
+        }
+
+        if (tyres.length > 0) {
+            doc.setFont(undefined, 'bold');
+            doc.text('Tyres:', 14, yPos);
+            yPos += 6;
+            doc.setFont(undefined, 'normal');
+            tyres.forEach((t, idx) => {
+                let text = `${idx + 1}. Tyre #${t.tyre_number} - ${t.action}`;
+                if (t.serial_number) text += ` (SN: ${t.serial_number})`;
+                if (t.swap_from) text += ` from ${t.swap_from}`;
+                doc.text(text, 20, yPos);
+                yPos += 6;
+            });
+            yPos += 3;
+        }
+
+        if (log.service_interval) {
+            doc.text(`Service: ${log.service_interval}`, 14, yPos);
+            yPos += 7;
+        }
+
+        if (log.other_description) {
+            doc.text('Other Work:', 14, yPos);
+            yPos += 6;
+            const splitText = doc.splitTextToSize(log.other_description, 180);
+            doc.text(splitText, 20, yPos);
+            yPos += (splitText.length * 6);
+        }
+
+        // Time & Fluids
+        if (yPos > 240) {
+            doc.addPage();
+            yPos = 20;
+        }
+
+        yPos += 5;
+        doc.setFont(undefined, 'bold');
+        doc.text('TIME & RESOURCES', 14, yPos);
+        yPos += 7;
+        doc.setFont(undefined, 'normal');
+        doc.text(`Time: ${log.time_started || 'N/A'} - ${log.time_ended || 'N/A'} (${log.duration || 'N/A'}h)`, 14, yPos);
+        yPos += 7;
+
+        if (log.delay_reason) {
+            doc.text(`Delay: ${log.delay_reason}`, 14, yPos);
+            yPos += 7;
+        }
+
+        const fluids = parseArray(log.fluids_used);
+        if (fluids.length > 0) {
+            yPos += 3;
+            doc.setFont(undefined, 'bold');
+            doc.text('Fluids Used:', 14, yPos);
+            yPos += 6;
+            doc.setFont(undefined, 'normal');
+            fluids.forEach(f => {
+                doc.text(`• ${f.type}: ${f.quantity}L`, 20, yPos);
+                yPos += 6;
+            });
+        }
+
+        if (log.work_to_plan) {
+            yPos += 5;
+            doc.setFont(undefined, 'bold');
+            doc.text('Work to Plan:', 14, yPos);
+            yPos += 6;
+            doc.setFont(undefined, 'normal');
+            const splitWork = doc.splitTextToSize(log.work_to_plan, 180);
+            doc.text(splitWork, 14, yPos);
+        }
+
+        doc.setFontSize(8);
+        doc.text(`Generated: ${new Date().toLocaleString()}`, 105, 290, { align: 'center' });
+
+        doc.save(`JobCard_${log.jobcard_number}_${log.plant_number}.pdf`);
+
+        await query`
+      UPDATE work_logs 
+      SET downloaded = ${true}, 
+          downloaded_at = ${new Date().toISOString()},
+          downloaded_by = ${user.id},
+          status = ${log.manager_approved ? 'completed' : 'pending'}
+      WHERE id = ${log.id}
+    `;
+
+        fetchData();
+    };
+
+    const exportToExcel = () => {
+        const filteredLogs = getFilteredLogs();
+
+        const excelData = filteredLogs.map((log) => {
+            const worker = users.find((u) => u.id === log.user_id);
+            const breakdown = parseArray(log.breakdown_issues_array);
+            const maintenance = parseArray(log.maintenance_issues_array);
+            const tyres = parseArray(log.tyres_array);
+            const fluids = parseArray(log.fluids_used);
+
+            return {
+                'Job Card #': log.jobcard_number,
+                'Date': formatDate(log.date),
+                'Site': log.site_name,
+                'Plant': log.plant_number,
+                'Kilos/Hours': log.kilos_hours,
+                'Job Type': log.job_type,
+                'Breakdown Issues': breakdown.map(b => b.detail ? `${b.issue} (${b.detail})` : b.issue).join('; '),
+                'Maintenance Issues': maintenance.map(m => {
+                    if (m.detail) return `${m.issue} (${m.detail})`;
+                    if (m.battery_position) return `${m.issue} (${m.battery_position})`;
+                    return m.issue;
+                }).join('; '),
+                'Tyres': tyres.map(t => `#${t.tyre_number} ${t.action}`).join('; '),
+                'Service': log.service_interval || '',
+                'Other': log.other_description || '',
+                'Mechanic': worker?.name || 'Unknown',
+                'Time Started': log.time_started || '',
+                'Time Ended': log.time_ended || '',
+                'Duration (hrs)': log.duration || '',
+                'Delay': log.delay_reason || '',
+                'Fluids': fluids.map(f => `${f.type}: ${f.quantity}L`).join('; '),
+                'Work to Plan': log.work_to_plan || '',
+                'Status': log.status,
+                'Approved': log.manager_approved ? 'Yes' : 'No',
+                'Downloaded': log.downloaded ? 'Yes' : 'No'
+            };
+        });
+
+        const worksheet = XLSX.utils.json_to_sheet(excelData);
+
+        const columnWidths = [
+            { wch: 15 }, { wch: 12 }, { wch: 15 }, { wch: 12 }, { wch: 12 },
+            { wch: 12 }, { wch: 30 }, { wch: 30 }, { wch: 25 }, { wch: 15 },
+            { wch: 30 }, { wch: 20 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
+            { wch: 25 }, { wch: 40 }, { wch: 30 }, { wch: 12 }, { wch: 10 }, { wch: 12 }
+        ];
+        worksheet['!cols'] = columnWidths;
+
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Job Cards');
+
+        const fileName = `JODAN_JobCards_${filter}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+        XLSX.writeFile(workbook, fileName);
     };
 
     const filteredLogs = getFilteredLogs();
@@ -224,8 +485,18 @@ export default function AdminDashboard() {
             <div className="page-container">
                 <div className="admin-dashboard">
                     <div className="dashboard-header">
-                        <h2>🏗️ JODAN Construction - Admin Dashboard</h2>
-                        <p>Job Card Management & Fleet Monitoring</p>
+                        <div className="header-content">
+                            <div>
+                                <h2>🏗️ JODAN Construction - Admin Dashboard</h2>
+                                <p>Job Card Management & Fleet Monitoring</p>
+                            </div>
+                            <button
+                                onClick={() => window.location.href = '/manage-dropdowns'}
+                                className="btn-manage-dropdowns"
+                            >
+                                ⚙️ Manage Options
+                            </button>
+                        </div>
                     </div>
 
                     {/* Stats Cards */}
@@ -269,7 +540,14 @@ export default function AdminDashboard() {
                             <div className="stat-icon">⏳</div>
                             <div className="stat-content">
                                 <h3>{stats.pendingApproval}</h3>
-                                <p>Pending Approval</p>
+                                <p>Pending</p>
+                            </div>
+                        </div>
+                        <div className="stat-card completed-card">
+                            <div className="stat-icon">✅</div>
+                            <div className="stat-content">
+                                <h3>{stats.completedCount}</h3>
+                                <p>Completed</p>
                             </div>
                         </div>
                     </div>
@@ -277,39 +555,18 @@ export default function AdminDashboard() {
                     {/* Filters */}
                     <div className="filter-section">
                         <div className="filter-buttons">
-                            <button
-                                className={filter === 'all' ? 'active' : ''}
-                                onClick={() => setFilter('all')}
-                            >
-                                All Time
-                            </button>
-                            <button
-                                className={filter === 'daily' ? 'active' : ''}
-                                onClick={() => setFilter('daily')}
-                            >
-                                Daily
-                            </button>
-                            <button
-                                className={filter === 'weekly' ? 'active' : ''}
-                                onClick={() => setFilter('weekly')}
-                            >
-                                Weekly
-                            </button>
-                            <button
-                                className={filter === 'monthly' ? 'active' : ''}
-                                onClick={() => setFilter('monthly')}
-                            >
-                                Monthly
-                            </button>
-                            <button
-                                className={filter === 'yearly' ? 'active' : ''}
-                                onClick={() => setFilter('yearly')}
-                            >
-                                Yearly
-                            </button>
+                            {['all', 'daily', 'weekly', 'monthly', 'yearly'].map(f => (
+                                <button
+                                    key={f}
+                                    className={filter === f ? 'active' : ''}
+                                    onClick={() => setFilter(f)}
+                                >
+                                    {f.charAt(0).toUpperCase() + f.slice(1)}
+                                </button>
+                            ))}
                         </div>
-                        <button onClick={exportToPDF} className="btn-export">
-                            📄 Export to PDF
+                        <button onClick={exportToExcel} className="btn-export-excel">
+                            📊 Export Excel
                         </button>
                     </div>
 
@@ -319,17 +576,17 @@ export default function AdminDashboard() {
                     {/* Job Cards Table */}
                     <div className="logs-section">
                         <h3>📋 Job Cards ({filteredLogs.length})</h3>
-                        <div className="table-container">
+                        <div className="table-responsive">
                             <table className="logs-table">
                                 <thead>
                                     <tr>
                                         <th>Job Card #</th>
                                         <th>Date</th>
+                                        <th className="hide-mobile">Site</th>
                                         <th>Plant</th>
-                                        <th>SMR</th>
-                                        <th>Type</th>
-                                        <th>Mechanic</th>
-                                        <th>Description</th>
+                                        <th className="hide-mobile">Type</th>
+                                        <th className="hide-tablet">Details</th>
+                                        <th className="hide-mobile">Mechanic</th>
                                         <th>Duration</th>
                                         <th>Status</th>
                                         <th>Actions</th>
@@ -338,54 +595,57 @@ export default function AdminDashboard() {
                                 <tbody>
                                     {filteredLogs.length === 0 ? (
                                         <tr>
-                                            <td colSpan="10" className="no-data">
-                                                No job cards found for the selected filter.
-                                            </td>
+                                            <td colSpan="10" className="no-data">No job cards found</td>
                                         </tr>
                                     ) : (
                                         filteredLogs.map((log) => {
                                             const worker = users.find((u) => u.id === log.user_id);
-                                            const equipmentInfo = equipment.find((eq) => eq.plant_number === log.plant_number);
+                                            const isCompleted = log.status === 'completed' && log.manager_approved && log.downloaded;
 
                                             return (
-                                                <tr key={log.id} className={log.job_type === 'Breakdown' ? 'breakdown-row' : ''}>
+                                                <tr key={log.id}>
                                                     <td>
                                                         <strong className="jobcard-link" onClick={() => setSelectedJobCard(log)}>
                                                             {log.jobcard_number}
                                                         </strong>
                                                     </td>
-                                                    <td>{log.date}</td>
-                                                    <td>
-                                                        <div className="plant-info">
-                                                            <strong>{log.plant_number}</strong>
-                                                            {equipmentInfo && (
-                                                                <small>{equipmentInfo.equipment_type}</small>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                    <td>{log.smr}h</td>
-                                                    <td>
+                                                    <td>{formatDate(log.date)}</td>
+                                                    <td className="hide-mobile">{log.site_name}</td>
+                                                    <td><strong>{log.plant_number}</strong></td>
+                                                    <td className="hide-mobile">
                                                         <span className={`type-badge ${log.job_type.toLowerCase()}`}>
                                                             {log.job_type}
                                                         </span>
                                                     </td>
-                                                    <td>{worker?.name || 'Unknown'}</td>
-                                                    <td className="description-cell">{log.description}</td>
+                                                    <td className="hide-tablet details-cell">{formatIssuesForDisplay(log)}</td>
+                                                    <td className="hide-mobile">{worker?.name || 'Unknown'}</td>
                                                     <td><strong>{log.duration ? log.duration + 'h' : 'N/A'}</strong></td>
                                                     <td>
-                                                        <span className={`status-badge ${log.manager_approved ? 'approved' : 'pending'}`}>
-                                                            {log.manager_approved ? '✓ Approved' : '⏳ Pending'}
-                                                        </span>
+                                                        {isCompleted ? (
+                                                            <span className="status-badge completed">✓</span>
+                                                        ) : log.manager_approved ? (
+                                                            <span className="status-badge approved">✓</span>
+                                                        ) : (
+                                                            <span className="status-badge pending">⏳</span>
+                                                        )}
                                                     </td>
-                                                    <td>
+                                                    <td className="action-buttons">
                                                         {!log.manager_approved && (
                                                             <button
-                                                                className="btn-approve"
+                                                                className="btn-action btn-approve"
                                                                 onClick={() => approveJobCard(log.id)}
+                                                                title="Approve"
                                                             >
-                                                                Approve
+                                                                ✓
                                                             </button>
                                                         )}
+                                                        <button
+                                                            className="btn-action btn-download"
+                                                            onClick={() => downloadIndividualJobCardPDF(log)}
+                                                            title="Download PDF"
+                                                        >
+                                                            📄
+                                                        </button>
                                                     </td>
                                                 </tr>
                                             );
@@ -396,9 +656,9 @@ export default function AdminDashboard() {
                         </div>
                     </div>
 
-                    {/* Fleet Status Overview */}
+                    {/* Fleet Overview */}
                     <div className="fleet-section">
-                        <h3>🚜 Fleet Status Overview</h3>
+                        <h3>🚜 Fleet Status</h3>
                         <div className="fleet-grid">
                             {equipment.map((plant) => {
                                 const recentJobs = logs.filter(log => log.plant_number === plant.plant_number).length;
@@ -414,8 +674,8 @@ export default function AdminDashboard() {
                                         <p className="fleet-model">{plant.make_model}</p>
                                         <div className="fleet-stats">
                                             <div className="fleet-stat">
-                                                <span className="label">SMR:</span>
-                                                <span className="value">{plant.current_smr}h</span>
+                                                <span className="label">Hours:</span>
+                                                <span className="value">{plant.current_kilos_hours}h</span>
                                             </div>
                                             <div className="fleet-stat">
                                                 <span className="label">Jobs:</span>
@@ -424,7 +684,7 @@ export default function AdminDashboard() {
                                         </div>
                                         {lastJob && (
                                             <p className="fleet-last-service">
-                                                Last service: {lastJob.date}
+                                                Last: {formatDate(lastJob.date)}
                                             </p>
                                         )}
                                     </div>
@@ -435,7 +695,7 @@ export default function AdminDashboard() {
                 </div>
             </div>
 
-            {/* Job Card Detail Modal */}
+            {/* Modal */}
             {selectedJobCard && (
                 <div className="modal-overlay" onClick={() => setSelectedJobCard(null)}>
                     <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -448,13 +708,16 @@ export default function AdminDashboard() {
                                 <strong>Job Card #:</strong> {selectedJobCard.jobcard_number}
                             </div>
                             <div className="detail-row">
-                                <strong>Date:</strong> {selectedJobCard.date}
+                                <strong>Date:</strong> {formatDate(selectedJobCard.date)}
+                            </div>
+                            <div className="detail-row">
+                                <strong>Site:</strong> {selectedJobCard.site_name}
                             </div>
                             <div className="detail-row">
                                 <strong>Plant:</strong> {selectedJobCard.plant_number}
                             </div>
                             <div className="detail-row">
-                                <strong>SMR:</strong> {selectedJobCard.smr} hours
+                                <strong>Kilos/Hours:</strong> {selectedJobCard.kilos_hours}h
                             </div>
                             <div className="detail-row">
                                 <strong>Job Type:</strong> {selectedJobCard.job_type}
@@ -462,62 +725,103 @@ export default function AdminDashboard() {
                             <div className="detail-row">
                                 <strong>Mechanic:</strong> {users.find(u => u.id === selectedJobCard.user_id)?.name}
                             </div>
-                            <div className="detail-section">
-                                <strong>Description:</strong>
-                                <p>{selectedJobCard.description}</p>
-                            </div>
-                            <div className="detail-section">
-                                <strong>Work Done:</strong>
-                                <p>{selectedJobCard.work_done}</p>
-                            </div>
+
+                            {parseArray(selectedJobCard.breakdown_issues_array).length > 0 && (
+                                <div className="detail-section">
+                                    <strong>Breakdown Issues:</strong>
+                                    <ul className="issues-list">
+                                        {parseArray(selectedJobCard.breakdown_issues_array).map((b, idx) => (
+                                            <li key={idx}>{b.detail ? `${b.issue} - ${b.detail}` : b.issue}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+
+                            {parseArray(selectedJobCard.maintenance_issues_array).length > 0 && (
+                                <div className="detail-section">
+                                    <strong>Maintenance Issues:</strong>
+                                    <ul className="issues-list">
+                                        {parseArray(selectedJobCard.maintenance_issues_array).map((m, idx) => (
+                                            <li key={idx}>
+                                                {m.issue}
+                                                {m.detail && ` - ${m.detail}`}
+                                                {m.battery_position && ` (${m.battery_position})`}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+
+                            {parseArray(selectedJobCard.tyres_array).length > 0 && (
+                                <div className="detail-section">
+                                    <strong>Tyres:</strong>
+                                    <ul className="issues-list">
+                                        {parseArray(selectedJobCard.tyres_array).map((t, idx) => (
+                                            <li key={idx}>
+                                                Tyre #{t.tyre_number} - {t.action}
+                                                {t.serial_number && ` (SN: ${t.serial_number})`}
+                                                {t.swap_from && ` from ${t.swap_from}`}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+
+                            {selectedJobCard.service_interval && (
+                                <div className="detail-row">
+                                    <strong>Service:</strong> {selectedJobCard.service_interval}
+                                </div>
+                            )}
+
+                            {selectedJobCard.other_description && (
+                                <div className="detail-section">
+                                    <strong>Other Work:</strong>
+                                    <p>{selectedJobCard.other_description}</p>
+                                </div>
+                            )}
+
                             {selectedJobCard.work_to_plan && (
                                 <div className="detail-section">
                                     <strong>Work to Plan:</strong>
                                     <p>{selectedJobCard.work_to_plan}</p>
                                 </div>
                             )}
+
                             <div className="detail-row">
-                                <strong>Time Started:</strong> {selectedJobCard.time_started || 'N/A'}
+                                <strong>Time:</strong> {selectedJobCard.time_started} - {selectedJobCard.time_ended} ({selectedJobCard.duration}h)
                             </div>
-                            <div className="detail-row">
-                                <strong>Time Ended:</strong> {selectedJobCard.time_ended || 'N/A'}
-                            </div>
-                            <div className="detail-row">
-                                <strong>Duration:</strong> {selectedJobCard.duration ? selectedJobCard.duration + ' hours' : 'N/A'}
-                            </div>
+
                             {selectedJobCard.delay_reason && (
                                 <div className="detail-section alert">
-                                    <strong>⚠️ Delay Reason:</strong>
+                                    <strong>⚠️ Delay:</strong>
                                     <p>{selectedJobCard.delay_reason}</p>
                                 </div>
                             )}
-                            {parseFluids(selectedJobCard.fluids_used).length > 0 && (
+
+                            {parseArray(selectedJobCard.fluids_used).length > 0 && (
                                 <div className="detail-section">
-                                    <strong>Fluids/Oils Used:</strong>
-                                    <table className="fluids-table">
-                                        <thead>
-                                            <tr>
-                                                <th>Type</th>
-                                                <th>Quantity</th>
-                                                <th>Unit</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {parseFluids(selectedJobCard.fluids_used).map((fluid, idx) => (
-                                                <tr key={idx}>
-                                                    <td>{fluid.type}</td>
-                                                    <td>{fluid.quantity}</td>
-                                                    <td>{fluid.unit}</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
+                                    <strong>Fluids Used:</strong>
+                                    <ul className="issues-list">
+                                        {parseArray(selectedJobCard.fluids_used).map((f, idx) => (
+                                            <li key={idx}>{f.type}: {f.quantity} litres</li>
+                                        ))}
+                                    </ul>
                                 </div>
                             )}
+
                             <div className="detail-row">
                                 <strong>Status:</strong>
-                                <span className={`status-badge ${selectedJobCard.manager_approved ? 'approved' : 'pending'}`}>
-                                    {selectedJobCard.manager_approved ? '✓ Approved' : '⏳ Pending Approval'}
+                                <span className={`status-badge ${selectedJobCard.status === 'completed' && selectedJobCard.manager_approved && selectedJobCard.downloaded
+                                        ? 'completed'
+                                        : selectedJobCard.manager_approved
+                                            ? 'approved'
+                                            : 'pending'
+                                    }`}>
+                                    {selectedJobCard.status === 'completed' && selectedJobCard.manager_approved && selectedJobCard.downloaded
+                                        ? '✓ Completed'
+                                        : selectedJobCard.manager_approved
+                                            ? '✓ Approved'
+                                            : '⏳ Pending'}
                                 </span>
                             </div>
                         </div>
@@ -530,9 +834,18 @@ export default function AdminDashboard() {
                                         setSelectedJobCard(null);
                                     }}
                                 >
-                                    Approve Job Card
+                                    Approve
                                 </button>
                             )}
+                            <button
+                                className="btn-primary"
+                                onClick={() => {
+                                    downloadIndividualJobCardPDF(selectedJobCard);
+                                    setSelectedJobCard(null);
+                                }}
+                            >
+                                Download PDF
+                            </button>
                             <button className="btn-secondary" onClick={() => setSelectedJobCard(null)}>
                                 Close
                             </button>
