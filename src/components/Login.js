@@ -1,111 +1,131 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { query } from '../utils/neonClient';
-import { formatPhoneNumber } from '../utils/phoneFormatter';
+import bcrypt from 'bcryptjs';
 
 export default function Login() {
-    const [phone, setPhone] = useState('');
-    const [loading, setLoading] = useState(false);
+    const [formData, setFormData] = useState({
+        phone: '',
+        password: ''
+    });
     const [error, setError] = useState('');
+    const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
 
-    const handlePhoneChange = (e) => {
-        setPhone(e.target.value);
+    const formatPhoneNumber = (phone) => {
+        let cleaned = phone.replace(/\D/g, '');
+        if (cleaned.startsWith('0')) {
+            cleaned = '27' + cleaned.slice(1);
+        } else if (!cleaned.startsWith('27')) {
+            cleaned = '27' + cleaned;
+        }
+        return '+' + cleaned;
     };
 
-    const handleLogin = async (e) => {
+    const handleChange = (e) => {
+        setFormData({ ...formData, [e.target.name]: e.target.value });
+        setError('');
+    };
+
+    const handleSubmit = async (e) => {
         e.preventDefault();
         setLoading(true);
         setError('');
 
         try {
-            const formattedPhone = formatPhoneNumber(phone);
+            const formattedPhone = formatPhoneNumber(formData.phone);
 
-            // DEBUG: Check what we're searching for
-            console.log('Searching for phone:', formattedPhone);
+            const { data: users } = await query`
+        SELECT * FROM users WHERE phone = ${formattedPhone}
+      `;
 
-            const { data: userData, error: userError } = await query`
-      SELECT * FROM users WHERE phone = ${formattedPhone} LIMIT 1
-    `;
-
-            // DEBUG: See what we got back
-            console.log('Query result:', userData);
-            console.log('Query error:', userError);
-
-            if (userError) {
-                setError('Error connecting to database. Please try again.');
+            if (!users || users.length === 0) {
+                setError('User not found. Please sign up first.');
                 setLoading(false);
                 return;
             }
 
-            // userData is an array, get first item
-            const user = userData && userData.length > 0 ? userData[0] : null;
+            const user = users[0];
 
-            if (!user) {
-                setError('User not found. Please check your phone number or sign up first.');
+            // Check password
+            if (!user.password_hash) {
+                setError('Please contact admin to set up your password.');
                 setLoading(false);
                 return;
             }
 
-            // Store user data
+            // For now, simple comparison (in production, use bcrypt.compare)
+            // const passwordMatch = await bcrypt.compare(formData.password, user.password_hash);
+            const passwordMatch = formData.password === user.password_hash; // Temporary simple check
+
+            if (!passwordMatch) {
+                setError('Incorrect password. Please try again.');
+                setLoading(false);
+                return;
+            }
+
             localStorage.setItem('currentUser', JSON.stringify(user));
 
-            // Navigate based on user type
-            if (user.is_admin) {
+            // Route based on role
+            if (user.role === 'admin' || user.is_admin) {
                 navigate('/admin');
+            } else if (user.role === 'clerk') {
+                navigate('/clerk');
             } else {
                 navigate('/mechanic');
             }
         } catch (err) {
-            setError('Login failed. Please try again.');
             console.error('Login error:', err);
+            setError('An error occurred. Please try again.');
         }
 
         setLoading(false);
     };
 
-
     return (
         <div className="auth-container">
             <div className="auth-card">
                 <div className="auth-header">
-                    <div className="auth-icon">🏗️</div>
-                    <h2>Welcome Back</h2>
-                    <p className="auth-subtitle">Login to your account</p>
+                    <h1>🏗️ JODAN Construction</h1>
+                    <h2>Login</h2>
+                    <p>Enter your credentials to continue</p>
                 </div>
 
-                {error && <div className="error-message">{error}</div>}
-
-                <form onSubmit={handleLogin}>
+                <form onSubmit={handleSubmit} className="auth-form">
                     <div className="form-group">
                         <label>Phone Number</label>
                         <input
                             type="tel"
-                            placeholder="0844062222"
-                            value={phone}
-                            onChange={handlePhoneChange}
+                            name="phone"
+                            placeholder="0821234567"
+                            value={formData.phone}
+                            onChange={handleChange}
                             required
                         />
-                        <small>Enter your 10-digit phone number (starting with 0)</small>
                     </div>
+
+                    <div className="form-group">
+                        <label>Password</label>
+                        <input
+                            type="password"
+                            name="password"
+                            placeholder="Enter your password"
+                            value={formData.password}
+                            onChange={handleChange}
+                            required
+                        />
+                    </div>
+
+                    {error && <div className="error-message">{error}</div>}
 
                     <button type="submit" disabled={loading} className="btn-primary">
                         {loading ? 'Logging in...' : 'Login'}
                     </button>
+
+                    <p className="auth-switch">
+                        Don't have an account? <a href="/signup">Sign Up</a>
+                    </p>
                 </form>
-
-                <div className="test-accounts">
-                    <p><strong>Test Accounts:</strong></p>
-                    <ul>
-                        <li>Admin: <code>0844062222</code> (Tessa)</li>
-                        <li>Mechanic: <code>0821234567</code> (John)</li>
-                        <li>Mechanic: <code>0829876543</code> (Sarah)</li>
-                    </ul>
-                </div>
-
-                <p className="auth-footer">
-                    Don't have an account? <Link to="/signup">Sign up here</Link>
-                </p>
             </div>
         </div>
     );

@@ -27,6 +27,7 @@ export default function ManageDropdowns() {
     const [newItemName, setNewItemName] = useState('');
     const [newItemOrder, setNewItemOrder] = useState('');
     const [newItemRequiresFluids, setNewItemRequiresFluids] = useState(false);
+    const [equipmentList, setEquipmentList] = useState([]);
 
     useEffect(() => {
         const userData = JSON.parse(localStorage.getItem('currentUser'));
@@ -64,6 +65,10 @@ export default function ManageDropdowns() {
 
         const { data: fluidData } = await query`SELECT * FROM fluid_types ORDER BY fluid_name`;
         setFluidTypes(fluidData || []);
+
+        const { data: equipmentData } = await query`SELECT * FROM equipment ORDER BY plant_number`;
+        setEquipmentList(equipmentData || []);
+
 
         setLoading(false);
     };
@@ -236,6 +241,97 @@ export default function ManageDropdowns() {
         } catch (error) {
             console.error('Delete error:', error);
             showMessage('Error deleting item. It may be in use by existing job cards.', false);
+        }
+
+        setLoading(false);
+    };
+
+    // Add these after the existing handleDelete function
+
+    const handleAddEquipment = async () => {
+        if (!newItemName.trim()) {
+            showMessage('Please enter plant number', false);
+            return;
+        }
+
+        setLoading(true);
+
+        try {
+            const equipmentType = prompt('Enter equipment type (e.g., Dump Truck):');
+            const makeModel = prompt('Enter make/model (e.g., Volvo A40G):');
+            const kilosHours = parseInt(prompt('Enter current kilos/hours:') || '0');
+
+            if (!equipmentType || !makeModel) {
+                showMessage('Equipment type and make/model are required', false);
+                setLoading(false);
+                return;
+            }
+
+            const { error } = await query`
+      INSERT INTO equipment (plant_number, equipment_type, make_model, status, current_kilos_hours)
+      VALUES (${newItemName}, ${equipmentType}, ${makeModel}, ${'operational'}, ${kilosHours})
+    `;
+
+            if (error) throw error;
+
+            showMessage('Equipment added successfully!');
+            setNewItemName('');
+            fetchAllData();
+        } catch (error) {
+            console.error('Add equipment error:', error);
+            showMessage('Error adding equipment', false);
+        }
+
+        setLoading(false);
+    };
+
+    const handleUpdateEquipment = async (id, field, value) => {
+        setLoading(true);
+
+        try {
+            if (field === 'plant_number') {
+                const { error } = await query`UPDATE equipment SET plant_number = ${value} WHERE id = ${id}`;
+                if (error) throw error;
+            } else if (field === 'equipment_type') {
+                const { error } = await query`UPDATE equipment SET equipment_type = ${value} WHERE id = ${id}`;
+                if (error) throw error;
+            } else if (field === 'make_model') {
+                const { error } = await query`UPDATE equipment SET make_model = ${value} WHERE id = ${id}`;
+                if (error) throw error;
+            } else if (field === 'status') {
+                const { error } = await query`UPDATE equipment SET status = ${value} WHERE id = ${id}`;
+                if (error) throw error;
+            } else if (field === 'current_kilos_hours') {
+                const { error } = await query`UPDATE equipment SET current_kilos_hours = ${parseInt(value)} WHERE id = ${id}`;
+                if (error) throw error;
+            }
+
+            showMessage('Equipment updated!');
+            fetchAllData();
+        } catch (error) {
+            console.error('Update equipment error:', error);
+            showMessage('Error updating equipment', false);
+        }
+
+        setLoading(false);
+    };
+
+    const handleDeleteEquipment = async (id, plantNumber) => {
+        if (!window.confirm(`Delete equipment ${plantNumber}? This cannot be undone!`)) {
+            return;
+        }
+
+        setLoading(true);
+
+        try {
+            const { error } = await query`DELETE FROM equipment WHERE id = ${id}`;
+            if (error) throw error;
+
+            showMessage('Equipment deleted!');
+            fetchAllData();
+        } catch (error) {
+            console.error('Delete error:', error);
+            showMessage('Error: Equipment may be in use by job cards', false);
         }
 
         setLoading(false);
@@ -523,6 +619,9 @@ export default function ManageDropdowns() {
                     )}
 
                     <div className="tabs">
+                        <button className={activeTab === 'equipment' ? 'active' : ''} onClick={() => setActiveTab('equipment')}>
+                            Equipment
+                        </button>
                         <button className={activeTab === 'sites' ? 'active' : ''} onClick={() => setActiveTab('sites')}>
                             Sites
                         </button>
@@ -550,6 +649,163 @@ export default function ManageDropdowns() {
                     </div>
 
                     <div className="tab-content">
+                        {activeTab === 'equipment' && (
+                            <div className="dropdown-section">
+                                <h3>Equipment / Plant Management</h3>
+                                <p className="description">Manage fleet equipment and plant numbers</p>
+
+                                <div className="dropdown-table-container">
+                                    <table className="dropdown-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Plant #</th>
+                                                <th>Type</th>
+                                                <th>Make/Model</th>
+                                                <th>Status</th>
+                                                <th>Hours</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {equipmentList.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan="6" className="no-data">No equipment yet. Add one below!</td>
+                                                </tr>
+                                            ) : (
+                                                equipmentList.map((equip) => (
+                                                    <tr key={equip.id}>
+                                                        <td>
+                                                            {editingId === equip.id ? (
+                                                                <input
+                                                                    type="text"
+                                                                    value={editingValue}
+                                                                    onChange={(e) => setEditingValue(e.target.value)}
+                                                                    className="edit-input"
+                                                                    autoFocus
+                                                                />
+                                                            ) : (
+                                                                <strong>{equip.plant_number}</strong>
+                                                            )}
+                                                        </td>
+                                                        <td>
+                                                            {editingId === equip.id ? (
+                                                                <input
+                                                                    type="text"
+                                                                    value={equip.equipment_type}
+                                                                    onChange={(e) => handleUpdateEquipment(equip.id, 'equipment_type', e.target.value)}
+                                                                    className="edit-input"
+                                                                />
+                                                            ) : (
+                                                                equip.equipment_type
+                                                            )}
+                                                        </td>
+                                                        <td>
+                                                            {editingId === equip.id ? (
+                                                                <input
+                                                                    type="text"
+                                                                    value={equip.make_model}
+                                                                    onChange={(e) => handleUpdateEquipment(equip.id, 'make_model', e.target.value)}
+                                                                    className="edit-input"
+                                                                />
+                                                            ) : (
+                                                                equip.make_model
+                                                            )}
+                                                        </td>
+                                                        <td>
+                                                            {editingId === equip.id ? (
+                                                                <select
+                                                                    value={equip.status}
+                                                                    onChange={(e) => handleUpdateEquipment(equip.id, 'status', e.target.value)}
+                                                                    className="edit-input"
+                                                                >
+                                                                    <option value="operational">Operational</option>
+                                                                    <option value="maintenance">Maintenance</option>
+                                                                    <option value="broken">Broken</option>
+                                                                    <option value="retired">Retired</option>
+                                                                </select>
+                                                            ) : (
+                                                                <span className={`status-badge ${equip.status}`}>
+                                                                    {equip.status}
+                                                                </span>
+                                                            )}
+                                                        </td>
+                                                        <td>
+                                                            {editingId === equip.id ? (
+                                                                <input
+                                                                    type="number"
+                                                                    value={equip.current_kilos_hours}
+                                                                    onChange={(e) => handleUpdateEquipment(equip.id, 'current_kilos_hours', e.target.value)}
+                                                                    className="edit-input-small"
+                                                                />
+                                                            ) : (
+                                                                <strong>{equip.current_kilos_hours}h</strong>
+                                                            )}
+                                                        </td>
+                                                        <td className="action-buttons">
+                                                            {editingId === equip.id ? (
+                                                                <>
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            handleUpdateEquipment(equip.id, 'plant_number', editingValue);
+                                                                            setEditingId(null);
+                                                                        }}
+                                                                        className="btn-save"
+                                                                    >
+                                                                        ✓ Save
+                                                                    </button>
+                                                                    <button onClick={cancelEdit} className="btn-cancel">
+                                                                        ✕ Cancel
+                                                                    </button>
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <button
+                                                                        onClick={() => startEdit(equip.id, equip.plant_number)}
+                                                                        className="btn-edit"
+                                                                    >
+                                                                        ✎ Edit
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => handleDeleteEquipment(equip.id, equip.plant_number)}
+                                                                        className="btn-delete"
+                                                                    >
+                                                                        🗑
+                                                                    </button>
+                                                                </>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                ))
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div className="add-form">
+                                    <h4>Add New Equipment</h4>
+                                    <div className="add-form-inputs">
+                                        <input
+                                            type="text"
+                                            placeholder="Plant Number (e.g., P009)"
+                                            value={newItemName}
+                                            onChange={(e) => setNewItemName(e.target.value)}
+                                            className="add-input"
+                                        />
+                                        <button
+                                            onClick={handleAddEquipment}
+                                            className="btn-add"
+                                            disabled={loading}
+                                        >
+                                            + Add Equipment
+                                        </button>
+                                    </div>
+                                    <small style={{ marginTop: '8px', display: 'block', color: 'var(--text-light)' }}>
+                                        You'll be prompted for equipment type, make/model, and hours after clicking Add
+                                    </small>
+                                </div>
+                            </div>
+                        )}
+
                         {activeTab === 'sites' && (
                             <div className="dropdown-section">
                                 <h3>Site Locations</h3>

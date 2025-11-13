@@ -1,0 +1,98 @@
+.clerk-dashboard {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.filter-select {
+  padding: 10px 16px;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  background: white;
+  cursor: pointer;
+}
+
+.filter-select:focus {
+  border-color: var(--primary);
+  outline: none;
+}
+
+.jobs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  min-width: 1000px;
+}
+
+.jobs-table thead {
+  background: var(--background);
+}
+
+.jobs-table th {
+  padding: 12px;
+  text-align: left;
+  font-weight: 600;
+  border-bottom: 2px solid var(--border);
+}
+
+.jobs-table td {
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.jobs-table tbody tr:hover {
+  background: var(--background);
+}
+
+.completed-row {
+  opacity: 0.6;
+  background: #F0FFF4;
+}
+
+.date-input,
+.status-select {
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.checkbox {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+}
+
+.status-badge.normal {
+  background: #E8F8F5;
+  color: #27AE60;
+}
+
+.status-badge.borderline {
+  background: #FFF3CD;
+  color: #F39C12;
+}
+
+.status-badge.urgent {
+  background: #FDEDEC;
+  color: #E74C3C;
+}
+
+.urgent-card {
+  border-left-color: #E74C3C;
+}
+
+.urgent-card .stat-icon {
+  background: #FDEDEC;
+  color: #E74C3C;
+}
+
+@media (max-width: 768px) {
+  .filter-section {
+    flex-direction: column;
+  }
+  
+  .filter-select {
+    width: 100%;
+  }
+}

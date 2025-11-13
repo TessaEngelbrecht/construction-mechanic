@@ -5,6 +5,7 @@ import Signup from './components/Signup';
 import MechanicForm from './components/MechanicForm';
 import AdminDashboard from './components/AdminDashboard';
 import ManageDropdowns from './components/ManageDropdowns';
+import ClerkDashboard from './components/ClerkDashboard';
 import './App.css';
 
 function ProtectedRoute({ children }) {
@@ -36,6 +37,7 @@ function App() {
           }
         />
         <Route path="/manage-dropdowns" element={<ManageDropdowns />} />
+        <Route path="/clerk" element={<ClerkDashboard />} />
       </Routes>
     </div>
   );

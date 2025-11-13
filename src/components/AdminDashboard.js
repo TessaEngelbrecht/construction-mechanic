@@ -24,6 +24,8 @@ export default function AdminDashboard() {
         pendingApproval: 0,
         completedCount: 0
     });
+    const [searchTerm, setSearchTerm] = useState('');
+
 
     useEffect(() => {
         const userData = JSON.parse(localStorage.getItem('currentUser'));
@@ -41,16 +43,25 @@ export default function AdminDashboard() {
 
         try {
             const { data: logsData } = await query`
-        SELECT * FROM work_logs ORDER BY date DESC, created_at DESC
-      `;
+      SELECT 
+        wl.*,
+        wc.date_received,
+        wc.date_submitted,
+        wc.date_reported,
+        wc.status as wearcheck_status,
+        wc.completed as wearcheck_completed
+      FROM work_logs wl
+      LEFT JOIN wearcheck wc ON wl.id = wc.work_log_id
+      ORDER BY wl.date DESC, wl.created_at DESC
+    `;
 
             const { data: usersData } = await query`
-        SELECT * FROM users ORDER BY name
-      `;
+      SELECT * FROM users ORDER BY name
+    `;
 
             const { data: equipmentData } = await query`
-        SELECT * FROM equipment ORDER BY plant_number
-      `;
+      SELECT * FROM equipment ORDER BY plant_number
+    `;
 
             setLogs(Array.isArray(logsData) ? logsData : []);
             setUsers(Array.isArray(usersData) ? usersData : []);
@@ -64,6 +75,7 @@ export default function AdminDashboard() {
 
         setLoading(false);
     };
+
 
     const calculateStats = () => {
         const totalHours = logs.reduce((sum, log) => sum + (Number(log.duration) || 0), 0);
@@ -187,6 +199,23 @@ export default function AdminDashboard() {
         }
     };
 
+    const getSearchFilteredLogs = () => {
+        let logs = getFilteredLogs();
+
+        if (!searchTerm.trim()) return logs;
+
+        const search = searchTerm.toLowerCase();
+        return logs.filter(log => {
+            // Search across multiple fields
+            return (
+                log.jobcard_number?.toLowerCase().includes(search) ||
+                log.plant_number?.toLowerCase().includes(search) ||
+                log.site_name?.toLowerCase().includes(search) ||
+                users.find(u => u.id === log.user_id)?.name?.toLowerCase().includes(search) ||
+                log.job_type?.toLowerCase().includes(search)
+            );
+        });
+    };
 
 
     const parseArray = (data) => {
@@ -217,10 +246,17 @@ export default function AdminDashboard() {
             }).join(', '));
         }
         if (tyres.length > 0) {
-            parts.push(tyres.map(t => `Tyre ${t.tyre_number} (${t.action})`).join(', '));
+            parts.push(tyres.map(t => {
+                let str = `Tyre ${t.tyre_number} (${t.action}`;
+                if (t.brand) str += ` - ${t.brand}`;
+                str += ')';
+                return str;
+            }).join(', '));
         }
         if (log.service_interval) {
-            parts.push(log.service_interval);
+            let serviceStr = log.service_interval;
+            if (log.sample_number) serviceStr += ` [${log.sample_number}]`;
+            parts.push(serviceStr);
         }
         if (log.other_description) {
             parts.push(log.other_description.substring(0, 50) + '...');
@@ -228,6 +264,7 @@ export default function AdminDashboard() {
 
         return parts.join(' | ') || 'N/A';
     };
+
 
     const approveJobCard = async (jobCardId) => {
         const { error } = await query`
@@ -326,35 +363,67 @@ export default function AdminDashboard() {
         }
 
         if (tyres.length > 0) {
+            // Check if we need a new page
+            if (yPos > 240) {
+                doc.addPage();
+                yPos = 20;
+            }
+
             doc.setFont(undefined, 'bold');
             doc.text('Tyres:', 14, yPos);
             yPos += 6;
             doc.setFont(undefined, 'normal');
             tyres.forEach((t, idx) => {
                 let text = `${idx + 1}. Tyre #${t.tyre_number} - ${t.action}`;
-                if (t.serial_number) text += ` (SN: ${t.serial_number})`;
+                if (t.brand) text += ` (${t.brand})`;
+                if (t.serial_number) text += ` SN: ${t.serial_number}`;
                 if (t.swap_from) text += ` from ${t.swap_from}`;
-                doc.text(text, 20, yPos);
-                yPos += 6;
+
+                // Handle long text wrapping
+                const splitText = doc.splitTextToSize(text, 170);
+                splitText.forEach(line => {
+                    if (yPos > 280) {
+                        doc.addPage();
+                        yPos = 20;
+                    }
+                    doc.text(line, 20, yPos);
+                    yPos += 6;
+                });
             });
             yPos += 3;
         }
 
         if (log.service_interval) {
-            doc.text(`Service: ${log.service_interval}`, 14, yPos);
+            doc.setFont(undefined, 'bold');
+            doc.text('Service:', 14, yPos);
+            doc.setFont(undefined, 'normal');
+            doc.text(log.service_interval, 60, yPos);
             yPos += 7;
         }
 
         if (log.other_description) {
+            if (yPos > 240) {
+                doc.addPage();
+                yPos = 20;
+            }
+            doc.setFont(undefined, 'bold');
             doc.text('Other Work:', 14, yPos);
             yPos += 6;
+            doc.setFont(undefined, 'normal');
             const splitText = doc.splitTextToSize(log.other_description, 180);
-            doc.text(splitText, 20, yPos);
-            yPos += (splitText.length * 6);
+            splitText.forEach(line => {
+                if (yPos > 280) {
+                    doc.addPage();
+                    yPos = 20;
+                }
+                doc.text(line, 20, yPos);
+                yPos += 6;
+            });
+            yPos += 3;
         }
 
-        // Time & Fluids
-        if (yPos > 240) {
+        // Time & Resources
+        if (yPos > 220) {
             doc.addPage();
             yPos = 20;
         }
@@ -368,52 +437,134 @@ export default function AdminDashboard() {
         yPos += 7;
 
         if (log.delay_reason) {
-            doc.text(`Delay: ${log.delay_reason}`, 14, yPos);
-            yPos += 7;
+            doc.setFont(undefined, 'bold');
+            doc.text('Delay Reason:', 14, yPos);
+            yPos += 6;
+            doc.setFont(undefined, 'normal');
+            const splitDelay = doc.splitTextToSize(log.delay_reason, 180);
+            splitDelay.forEach(line => {
+                if (yPos > 280) {
+                    doc.addPage();
+                    yPos = 20;
+                }
+                doc.text(line, 14, yPos);
+                yPos += 6;
+            });
+            yPos += 3;
         }
 
         const fluids = parseArray(log.fluids_used);
         if (fluids.length > 0) {
+            if (yPos > 240) {
+                doc.addPage();
+                yPos = 20;
+            }
             yPos += 3;
             doc.setFont(undefined, 'bold');
             doc.text('Fluids Used:', 14, yPos);
             yPos += 6;
             doc.setFont(undefined, 'normal');
             fluids.forEach(f => {
+                if (yPos > 280) {
+                    doc.addPage();
+                    yPos = 20;
+                }
                 doc.text(`• ${f.type}: ${f.quantity}L`, 20, yPos);
                 yPos += 6;
             });
+            yPos += 3;
+        }
+
+        // WearCheck Information (for Service jobs)
+        if (log.job_type === 'Service') {
+            if (yPos > 210) {
+                doc.addPage();
+                yPos = 20;
+            }
+
+            yPos += 5;
+            doc.setFontSize(11);
+            doc.setFont(undefined, 'bold');
+            doc.setFillColor(31, 78, 120);
+            doc.rect(14, yPos - 3, 180, 8, 'F');
+            doc.setTextColor(255, 255, 255);
+            doc.text('WEARCHECK INFORMATION', 16, yPos + 3);
+            doc.setTextColor(0, 0, 0);
+            yPos += 12;
+
+            doc.setFont(undefined, 'normal');
+            const wearcheckInfo = [
+                ['Sample #:', log.sample_number || 'N/A'],
+                ['Date Received:', formatDate(log.date_received) || 'Not set'],
+                ['Date Submitted:', formatDate(log.date_submitted) || 'Not set'],
+                ['Date Reported:', formatDate(log.date_reported) || 'Not set'],
+                ['Status:', log.wearcheck_status || 'Not set'],
+                ['Completed:', log.wearcheck_completed ? 'Yes' : 'No']
+            ];
+
+            wearcheckInfo.forEach(([label, value]) => {
+                if (yPos > 280) {
+                    doc.addPage();
+                    yPos = 20;
+                }
+                doc.setFont(undefined, 'bold');
+                doc.text(label, 14, yPos);
+                doc.setFont(undefined, 'normal');
+                doc.text(value, 70, yPos);
+                yPos += 7;
+            });
+            yPos += 3;
         }
 
         if (log.work_to_plan) {
+            if (yPos > 240) {
+                doc.addPage();
+                yPos = 20;
+            }
             yPos += 5;
             doc.setFont(undefined, 'bold');
             doc.text('Work to Plan:', 14, yPos);
             yPos += 6;
             doc.setFont(undefined, 'normal');
             const splitWork = doc.splitTextToSize(log.work_to_plan, 180);
-            doc.text(splitWork, 14, yPos);
+            splitWork.forEach(line => {
+                if (yPos > 280) {
+                    doc.addPage();
+                    yPos = 20;
+                }
+                doc.text(line, 14, yPos);
+                yPos += 6;
+            });
         }
 
-        doc.setFontSize(8);
-        doc.text(`Generated: ${new Date().toLocaleString()}`, 105, 290, { align: 'center' });
+        // Footer
+        const totalPages = doc.internal.getNumberOfPages();
+        for (let i = 1; i <= totalPages; i++) {
+            doc.setPage(i);
+            doc.setFontSize(8);
+            doc.setTextColor(128, 128, 128);
+            doc.text(`Page ${i} of ${totalPages}`, 105, 290, { align: 'center' });
+            doc.text(`Generated: ${new Date().toLocaleString()}`, 105, 285, { align: 'center' });
+        }
 
         doc.save(`JobCard_${log.jobcard_number}_${log.plant_number}.pdf`);
 
+        // Mark as downloaded
         await query`
-      UPDATE work_logs 
-      SET downloaded = ${true}, 
-          downloaded_at = ${new Date().toISOString()},
-          downloaded_by = ${user.id},
-          status = ${log.manager_approved ? 'completed' : 'pending'}
-      WHERE id = ${log.id}
-    `;
+    UPDATE work_logs 
+    SET downloaded = ${true}, 
+        downloaded_at = ${new Date().toISOString()},
+        downloaded_by = ${user.id},
+        status = ${log.manager_approved ? 'completed' : 'pending'}
+    WHERE id = ${log.id}
+  `;
 
         fetchData();
     };
 
     const exportToExcel = () => {
-        const filteredLogs = getFilteredLogs();
+        const filteredLogs = getSearchFilteredLogs();
+
 
         const excelData = filteredLogs.map((log) => {
             const worker = users.find((u) => u.id === log.user_id);
@@ -565,10 +716,33 @@ export default function AdminDashboard() {
                                 </button>
                             ))}
                         </div>
-                        <button onClick={exportToExcel} className="btn-export-excel">
-                            📊 Export Excel
-                        </button>
+
+                        <div className="search-export-group">
+                            <div className="search-container">
+                                <input
+                                    type="text"
+                                    placeholder="🔍 Search job cards..."
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    className="search-input"
+                                />
+                                {searchTerm && (
+                                    <button
+                                        onClick={() => setSearchTerm('')}
+                                        className="btn-clear-search"
+                                        title="Clear search"
+                                    >
+                                        ✕
+                                    </button>
+                                )}
+                            </div>
+
+                            <button onClick={exportToExcel} className="btn-export-excel">
+                                📊 Export Excel
+                            </button>
+                        </div>
                     </div>
+
 
                     {/* Charts */}
                     <SummaryCharts logs={filteredLogs} users={users} equipment={equipment} filter={filter} />
@@ -617,11 +791,27 @@ export default function AdminDashboard() {
                                                             {log.job_type}
                                                         </span>
                                                     </td>
-                                                    <td className="hide-tablet details-cell">{formatIssuesForDisplay(log)}</td>
+                                                    <td className="hide-tablet details-cell">
+                                                        {formatIssuesForDisplay(log)}
+                                                        {log.job_type === 'Service' && (
+                                                            <div className="wearcheck-indicator">
+                                                                {log.wearcheck_completed ? (
+                                                                    <span className="wearcheck-badge completed">✓ WearCheck Done</span>
+                                                                ) : (
+                                                                    <span className="wearcheck-badge pending">⏳ WearCheck Pending</span>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </td>
+
                                                     <td className="hide-mobile">{worker?.name || 'Unknown'}</td>
                                                     <td><strong>{log.duration ? log.duration + 'h' : 'N/A'}</strong></td>
                                                     <td>
-                                                        {isCompleted ? (
+                                                        {log.job_type === 'Service' && !log.wearcheck_completed ? (
+                                                            <span className="status-badge pending" title="Awaiting WearCheck completion">
+                                                                ⏳ WearCheck
+                                                            </span>
+                                                        ) : log.status === 'completed' && log.manager_approved && log.downloaded ? (
                                                             <span className="status-badge completed">✓</span>
                                                         ) : log.manager_approved ? (
                                                             <span className="status-badge approved">✓</span>
@@ -759,6 +949,7 @@ export default function AdminDashboard() {
                                         {parseArray(selectedJobCard.tyres_array).map((t, idx) => (
                                             <li key={idx}>
                                                 Tyre #{t.tyre_number} - {t.action}
+                                                {t.brand && <strong> ({t.brand})</strong>}
                                                 {t.serial_number && ` (SN: ${t.serial_number})`}
                                                 {t.swap_from && ` from ${t.swap_from}`}
                                             </li>
@@ -770,6 +961,26 @@ export default function AdminDashboard() {
                             {selectedJobCard.service_interval && (
                                 <div className="detail-row">
                                     <strong>Service:</strong> {selectedJobCard.service_interval}
+                                </div>
+                            )}
+
+                            {selectedJobCard.job_type === 'Service' && (
+                                <div className="detail-section wearcheck-section">
+                                    <strong>🔬 WearCheck Information:</strong>
+                                    <div className="wearcheck-details">
+                                        <p><strong>Sample #:</strong> {selectedJobCard.sample_number || 'N/A'}</p>
+                                        <p><strong>Date Received:</strong> {formatDate(selectedJobCard.date_received) || 'Not set'}</p>
+                                        <p><strong>Date Submitted:</strong> {formatDate(selectedJobCard.date_submitted) || 'Not set'}</p>
+                                        <p><strong>Date Reported:</strong> {formatDate(selectedJobCard.date_reported) || 'Not set'}</p>
+                                        <p>
+                                            <strong>Status:</strong> {selectedJobCard.wearcheck_status ? (
+                                                <span className={`status-badge ${selectedJobCard.wearcheck_status.toLowerCase()}`}>
+                                                    {selectedJobCard.wearcheck_status}
+                                                </span>
+                                            ) : 'Not set'}
+                                        </p>
+                                        <p><strong>Completed:</strong> {selectedJobCard.wearcheck_completed ? '✅ Yes' : '⏳ Pending'}</p>
+                                    </div>
                                 </div>
                             )}
 
@@ -811,17 +1022,21 @@ export default function AdminDashboard() {
 
                             <div className="detail-row">
                                 <strong>Status:</strong>
-                                <span className={`status-badge ${selectedJobCard.status === 'completed' && selectedJobCard.manager_approved && selectedJobCard.downloaded
-                                        ? 'completed'
-                                        : selectedJobCard.manager_approved
-                                            ? 'approved'
-                                            : 'pending'
+                                <span className={`status-badge ${selectedJobCard.job_type === 'Service' && !selectedJobCard.wearcheck_completed
+                                        ? 'pending'
+                                        : selectedJobCard.status === 'completed' && selectedJobCard.manager_approved && selectedJobCard.downloaded
+                                            ? 'completed'
+                                            : selectedJobCard.manager_approved
+                                                ? 'approved'
+                                                : 'pending'
                                     }`}>
-                                    {selectedJobCard.status === 'completed' && selectedJobCard.manager_approved && selectedJobCard.downloaded
-                                        ? '✓ Completed'
-                                        : selectedJobCard.manager_approved
-                                            ? '✓ Approved'
-                                            : '⏳ Pending'}
+                                    {selectedJobCard.job_type === 'Service' && !selectedJobCard.wearcheck_completed
+                                        ? '⏳ Awaiting WearCheck'
+                                        : selectedJobCard.status === 'completed' && selectedJobCard.manager_approved && selectedJobCard.downloaded
+                                            ? '✓ Completed'
+                                            : selectedJobCard.manager_approved
+                                                ? '✓ Approved'
+                                                : '⏳ Pending'}
                                 </span>
                             </div>
                         </div>

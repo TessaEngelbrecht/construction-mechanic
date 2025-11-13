@@ -7,8 +7,11 @@ export default function Signup() {
     const [formData, setFormData] = useState({
         phone: '',
         name: '',
-        email: ''
+        email: '',
+        password: '',
+        confirmPassword: ''
     });
+
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
@@ -39,15 +42,25 @@ export default function Signup() {
                 return;
             }
 
+            if (formData.password !== formData.confirmPassword) {
+                setError('Passwords do not match');
+                setLoading(false);
+                return;
+            }
+
+            if (formData.password.length < 6) {
+                setError('Password must be at least 6 characters');
+                setLoading(false);
+                return;
+            }
+
             // Check if admin
             const isAdmin = formattedPhone === '+27844062222';
 
             // Insert new user - TAGGED TEMPLATE
             const { error: insertError } = await query`
-      INSERT INTO users (phone, name, email, is_admin)
-      VALUES (${formattedPhone}, ${formData.name}, ${formData.email}, ${isAdmin})
-      RETURNING *
-    `;
+  INSERT INTO users (phone, name, email, is_admin, role, password_hash) VALUES (${formattedPhone}, ${formData.name}, ${formData.email}, ${isAdmin}, ${isAdmin ? 'admin' : 'mechanic'}, ${formData.password}) RETURNING *
+`;
 
             if (insertError) {
                 setError('Signup failed. Please try again.');
@@ -113,6 +126,31 @@ export default function Signup() {
                             onChange={handleChange}
                         />
                     </div>
+                    <div className="form-group">
+                        <label>Password</label>
+                        <input
+                            type="password"
+                            name="password"
+                            placeholder="Create a password"
+                            value={formData.password}
+                            onChange={handleChange}
+                            minLength="6"
+                            required
+                        />
+                    </div>
+
+                    <div className="form-group">
+                        <label>Confirm Password</label>
+                        <input
+                            type="password"
+                            name="confirmPassword"
+                            placeholder="Confirm your password"
+                            value={formData.confirmPassword}
+                            onChange={handleChange}
+                            required
+                        />
+                    </div>
+
 
                     <button type="submit" disabled={loading} className="btn-primary">
                         {loading ? 'Creating account...' : 'Sign Up'}

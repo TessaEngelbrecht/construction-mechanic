@@ -18,6 +18,7 @@ export default function MechanicForm() {
 
         service_interval: '',
         other_description: '',
+        sample_number: '',
 
         work_to_plan: '',
         time_started: '',
@@ -41,6 +42,8 @@ export default function MechanicForm() {
     const [tyreActions, setTyreActions] = useState([]);
     const [fluidTypes, setFluidTypes] = useState([]);
     const [selectedEquipment, setSelectedEquipment] = useState(null);
+    const [tyreBrands, setTyreBrands] = useState([]);
+
 
     useEffect(() => {
         const userData = JSON.parse(localStorage.getItem('currentUser'));
@@ -52,6 +55,10 @@ export default function MechanicForm() {
     }, []);
 
     const fetchDropdownData = async () => {
+
+        const { data: tyreBrandData } = await query`SELECT * FROM tyre_brands WHERE active = true ORDER BY brand_name ASC`;
+        setTyreBrands(tyreBrandData || []);
+
         const { data: equipmentData } = await query`SELECT * FROM equipment ORDER BY plant_number ASC`;
         setEquipmentList(equipmentData || []);
 
@@ -168,9 +175,10 @@ export default function MechanicForm() {
     const addTyre = () => {
         setFormData(prev => ({
             ...prev,
-            tyres: [...prev.tyres, { tyre_number: '', action: '', serial_number: '', swap_from: '' }]
+            tyres: [...prev.tyres, { tyre_number: '', action: '', brand: '', serial_number: '', swap_from: '' }]
         }));
     };
+
 
     const updateTyre = (index, field, value) => {
         const updated = [...formData.tyres];
@@ -179,6 +187,7 @@ export default function MechanicForm() {
             if (value !== 'New' && value !== 'Swap') {
                 updated[index].serial_number = '';
                 updated[index].swap_from = '';
+                updated[index].brand = '';
             }
             if (value !== 'Swap') {
                 updated[index].swap_from = '';
@@ -186,6 +195,7 @@ export default function MechanicForm() {
         }
         setFormData({ ...formData, tyres: updated });
     };
+
 
     const removeTyre = (index) => {
         setFormData(prev => ({
@@ -256,9 +266,9 @@ export default function MechanicForm() {
                 if (issue.issue === 'Battery' && !issue.battery_position) return 'Please select battery position';
             }
         }
-
-        if (formData.job_type === 'Service' && !formData.service_interval) {
-            return 'Please select service interval';
+        if (formData.job_type === 'Service') {
+            if (!formData.service_interval) return 'Please select service interval';
+            if (!formData.sample_number) return 'Sample number is required for services';
         }
 
         if (formData.job_type === 'Tyres') {
@@ -266,12 +276,16 @@ export default function MechanicForm() {
             for (let tyre of formData.tyres) {
                 if (!tyre.tyre_number) return 'Please enter tyre number';
                 if (!tyre.action) return 'Please select tyre action';
+                if ((tyre.action === 'New' || tyre.action === 'Swap') && !tyre.brand) {
+                    return 'Brand is required for new/swap tyres';
+                }
                 if (tyre.action === 'New' && !tyre.serial_number) return 'Serial number required for new tyres';
                 if (tyre.action === 'Swap' && (!tyre.serial_number || !tyre.swap_from)) {
                     return 'Serial number and swap location required';
                 }
             }
         }
+
 
         if (formData.job_type === 'Other' && !formData.other_description) {
             return 'Description is required for Other job type';
@@ -301,34 +315,34 @@ export default function MechanicForm() {
             const jobcardNumber = `JC-${Date.now().toString().slice(-8)}`;
 
             const { error } = await query`
-        INSERT INTO work_logs (
-          jobcard_number, user_id, date, site_name, plant_number, kilos_hours,
-          job_type, breakdown_issues_array, maintenance_issues_array, tyres_array,
-          service_interval, other_description, work_to_plan, time_started, time_ended,
-          duration, delay_reason, fluids_used, status, manager_approved
-        ) VALUES (
-          ${jobcardNumber},
-          ${user.id},
-          ${formData.date},
-          ${formData.site_name},
-          ${formData.plant_number},
-          ${parseInt(formData.kilos_hours)},
-          ${formData.job_type},
-          ${JSON.stringify(formData.breakdownIssues)},
-          ${JSON.stringify(formData.maintenanceIssues)},
-          ${JSON.stringify(formData.tyres)},
-          ${formData.service_interval || null},
-          ${formData.other_description || null},
-          ${formData.work_to_plan || null},
-          ${formData.time_started},
-          ${formData.time_ended},
-          ${duration},
-          ${formData.delay_reason || null},
-          ${JSON.stringify(formData.fluids_used)},
-          ${'completed'},
-          ${false}
-        )
-      `;
+  INSERT INTO work_logs (
+    jobcard_number, user_id, date, site_name, plant_number, kilos_hours,
+    job_type, breakdown_issues_array, maintenance_issues_array, tyres_array,
+    service_interval, sample_number, other_description, work_to_plan,
+    time_started, time_ended, duration, delay_reason, fluids_used,
+    status, manager_approved
+  ) VALUES (
+    ${jobcardNumber}, ${user.id}, ${formData.date}, ${formData.site_name},
+    ${formData.plant_number}, ${parseInt(formData.kilos_hours)},
+    ${formData.job_type}, ${JSON.stringify(formData.breakdownIssues)},
+    ${JSON.stringify(formData.maintenanceIssues)}, ${JSON.stringify(formData.tyres)},
+    ${formData.service_interval || null}, ${formData.sample_number || null},
+    ${formData.other_description || null}, ${formData.work_to_plan || null},
+    ${formData.time_started}, ${formData.time_ended}, ${duration},
+    ${formData.delay_reason || null}, ${JSON.stringify(formData.fluids_used)},
+    ${'completed'}, ${false}
+  )
+`;
+
+            // If it's a service, create wearcheck entry
+            if (formData.job_type === 'Service' && !error) {
+                await query`
+    INSERT INTO wearcheck (work_log_id, sample_number)
+    SELECT id, ${formData.sample_number}
+    FROM work_logs
+    WHERE jobcard_number = ${jobcardNumber}
+  `;
+            }
 
             if (error) {
                 setMessage('❌ Error submitting job card. Please try again.');
@@ -596,17 +610,32 @@ export default function MechanicForm() {
 
                         {/* SERVICE */}
                         {formData.job_type === 'Service' && (
-                            <div className="form-group">
-                                <label>Service Interval *</label>
-                                <select name="service_interval" value={formData.service_interval} onChange={handleChange} required>
-                                    <option value="">Select Interval</option>
-                                    {serviceIntervals.map((interval) => (
-                                        <option key={interval.id} value={interval.interval_name}>
-                                            {interval.interval_name}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
+                            <>
+                                <div className="form-group">
+                                    <label>Service Interval *</label>
+                                    <select name="service_interval" value={formData.service_interval} onChange={handleChange} required>
+                                        <option value="">Select Interval</option>
+                                        {serviceIntervals.map((interval) => (
+                                            <option key={interval.id} value={interval.interval_name}>
+                                                {interval.interval_name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <div className="form-group">
+                                    <label>Sample Number *</label>
+                                    <input
+                                        type="text"
+                                        name="sample_number"
+                                        placeholder="e.g., WC-2025-001"
+                                        value={formData.sample_number}
+                                        onChange={handleChange}
+                                        required
+                                    />
+                                    <small>Enter the wearcheck sample number for this service</small>
+                                </div>
+                            </>
                         )}
 
                         {/* TYRES - Multiple */}
@@ -665,16 +694,34 @@ export default function MechanicForm() {
                                         </div>
 
                                         {(tyre.action === 'New' || tyre.action === 'Swap') && (
-                                            <div className="form-group">
-                                                <label>Serial Number *</label>
-                                                <input
-                                                    type="text"
-                                                    placeholder="e.g., SN-2025-TYR-00123"
-                                                    value={tyre.serial_number}
-                                                    onChange={(e) => updateTyre(index, 'serial_number', e.target.value)}
-                                                    required
-                                                />
-                                            </div>
+                                            <>
+                                                <div className="form-group">
+                                                    <label>Tyre Brand *</label>
+                                                    <select
+                                                        value={tyre.brand}
+                                                        onChange={(e) => updateTyre(index, 'brand', e.target.value)}
+                                                        required
+                                                    >
+                                                        <option value="">Select Brand</option>
+                                                        {tyreBrands.map((brand) => (
+                                                            <option key={brand.id} value={brand.brand_name}>
+                                                                {brand.brand_name}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+
+                                                <div className="form-group">
+                                                    <label>Serial Number *</label>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="e.g., SN-2025-TYR-00123"
+                                                        value={tyre.serial_number}
+                                                        onChange={(e) => updateTyre(index, 'serial_number', e.target.value)}
+                                                        required
+                                                    />
+                                                </div>
+                                            </>
                                         )}
 
                                         {tyre.action === 'Swap' && (
@@ -699,6 +746,7 @@ export default function MechanicForm() {
                                 )}
                             </div>
                         )}
+
 
                         {/* OTHER */}
                         {formData.job_type === 'Other' && (
