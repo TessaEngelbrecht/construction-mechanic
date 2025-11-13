@@ -134,6 +134,7 @@ export default function ManageDropdowns() {
         INSERT INTO tyre_actions (action_name, active)
         VALUES (${newItemName}, ${true})
       `;
+                if (error) throw error;
             } else if (table === 'tyre_brands') {
                 const { error } = await query`
     INSERT INTO tyre_brands (brand_name, active)

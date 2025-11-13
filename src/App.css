@@ -2955,3 +2955,45 @@ font-size: 13px;
 padding: 8px;
 }
 }
+
+/* Filter selects (reuse from Clerk) */
+.filter-select {
+  padding: 10px 16px;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  background: white;
+  cursor: pointer;
+}
+.filter-select:focus {
+  border-color: var(--primary);
+  outline: none;
+}
+
+/* Word-based status badges */
+.status-badge {
+  padding: 6px 12px;
+  border-radius: 14px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+/* map word statuses to colors */
+.status-badge.pending {
+  background: #ffe9a3;
+  color: #A56900;
+}
+.status-badge.approved {
+  background: #8ccefd;
+  color: #1B4F72;
+}
+.status-badge.wearcheck-waiting {
+  background: #ffdcd9;
+  color: #922B21;
+}
+.status-badge.completed {
+  background: #80ff79;
+  color: #196F3D;
+}

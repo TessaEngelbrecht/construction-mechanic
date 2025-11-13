@@ -15,6 +15,10 @@ export default function AdminDashboard() {
     const [filter, setFilter] = useState('all');
     const [loading, setLoading] = useState(true);
     const [selectedJobCard, setSelectedJobCard] = useState(null);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [statusFilter, setStatusFilter] = useState('all'); // all | pending | approved | wearcheck | completed
+    const [typeFilter, setTypeFilter] = useState('all');     // all | Breakdown | Maintenance | Service | Tyres | Other
+    const [siteFilter, setSiteFilter] = useState('all');     // all | specific site
     const [stats, setStats] = useState({
         totalHours: 0,
         totalJobCards: 0,
@@ -24,7 +28,6 @@ export default function AdminDashboard() {
         pendingApproval: 0,
         completedCount: 0
     });
-    //const [searchTerm, setSearchTerm] = useState('');
 
 
     useEffect(() => {
@@ -95,6 +98,13 @@ export default function AdminDashboard() {
             pendingApproval,
             completedCount
         });
+    };
+    const computeStatusWord = (log) => {
+        // Service must wait for WearCheck completion
+        if (log.job_type === 'Service' && !log.wearcheck_completed) return 'wearcheck waiting';
+        if (log.status === 'completed' && log.manager_approved && log.downloaded) return 'completed';
+        if (log.manager_approved) return 'approved';
+        return 'pending';
     };
 
     const formatDate = (dateValue) => {
@@ -199,23 +209,37 @@ export default function AdminDashboard() {
         }
     };
 
-    // const getSearchFilteredLogs = () => {
-    //     let logs = getFilteredLogs();
+    const getSearchFilteredLogs = () => {
+        const base = getFilteredLogs(); // your existing time-range filter (daily/weekly/etc.)
+        const search = searchTerm.trim().toLowerCase();
 
-    //     if (!searchTerm.trim()) return logs;
+        return base.filter(log => {
+            // status filter
+            const wordStatus = computeStatusWord(log);
+            if (statusFilter !== 'all' && wordStatus !== statusFilter) return false;
 
-    //     const search = searchTerm.toLowerCase();
-    //     return logs.filter(log => {
-    //         // Search across multiple fields
-    //         return (
-    //             log.jobcard_number?.toLowerCase().includes(search) ||
-    //             log.plant_number?.toLowerCase().includes(search) ||
-    //             log.site_name?.toLowerCase().includes(search) ||
-    //             users.find(u => u.id === log.user_id)?.name?.toLowerCase().includes(search) ||
-    //             log.job_type?.toLowerCase().includes(search)
-    //         );
-    //     });
-    // };
+            // job type filter
+            if (typeFilter !== 'all' && log.job_type !== typeFilter) return false;
+
+            // site filter
+            if (siteFilter !== 'all' && log.site_name !== siteFilter) return false;
+
+            // search across fields
+            if (!search) return true;
+            const mechanic = users.find(u => u.id === log.user_id)?.name || '';
+            const haystack = [
+                log.jobcard_number,
+                log.plant_number,
+                log.site_name,
+                mechanic,
+                log.job_type,
+                log.sample_number
+            ].filter(Boolean).join(' ').toLowerCase();
+
+            return haystack.includes(search);
+        });
+    };
+
 
 
     const parseArray = (data) => {
@@ -268,16 +292,18 @@ export default function AdminDashboard() {
 
     const approveJobCard = async (jobCardId) => {
         const { error } = await query`
-      UPDATE work_logs SET manager_approved = ${true} WHERE id = ${jobCardId}
-    `;
-
-        if (!error) {
-            fetchData();
-            //alert('Job card approved successfully!');
-        } else {
+    UPDATE work_logs SET manager_approved = ${true} WHERE id = ${jobCardId}
+  `;
+        if (error) {
             alert('Error approving job card');
+            return;
         }
+        // Update local state instead of fetchData()
+        setLogs(prev =>
+            prev.map(l => l.id === jobCardId ? { ...l, manager_approved: true } : l)
+        );
     };
+
 
     const downloadIndividualJobCardPDF = async (log) => {
         const doc = new jsPDF();
@@ -563,7 +589,7 @@ export default function AdminDashboard() {
     };
 
     const exportToExcel = () => {
-        //const filteredLogs = getSearchFilteredLogs();
+        const filteredLogs = getSearchFilteredLogs();
 
 
         const excelData = filteredLogs.map((log) => {
@@ -618,8 +644,7 @@ export default function AdminDashboard() {
         const fileName = `JODAN_JobCards_${filter}_${new Date().toISOString().slice(0, 10)}.xlsx`;
         XLSX.writeFile(workbook, fileName);
     };
-
-    const filteredLogs = getFilteredLogs();
+    const filteredLogs = getSearchFilteredLogs();
 
     if (!user || loading) {
         return (
@@ -727,6 +752,82 @@ export default function AdminDashboard() {
 
                     {/* Charts */}
                     <SummaryCharts logs={filteredLogs} users={users} equipment={equipment} filter={filter} />
+                    {/* Search & Filters */}
+                    <div className="filter-section" style={{ marginTop: 16, marginBottom: 8 }}>
+                        <div className="search-export-group" style={{ width: '100%' }}>
+                            <div className="search-container">
+                                <input
+                                    type="text"
+                                    placeholder="🔍 Search by job card, plant #, site, mechanic, sample #"
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    className="search-input"
+                                />
+                                {searchTerm && (
+                                    <button
+                                        onClick={() => setSearchTerm('')}
+                                        className="btn-clear-search"
+                                        title="Clear search"
+                                    >
+                                        ✕
+                                    </button>
+                                )}
+                            </div>
+
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                <select
+                                    value={statusFilter}
+                                    onChange={(e) => setStatusFilter(e.target.value)}
+                                    className="filter-select"
+                                    aria-label="Status filter"
+                                >
+                                    <option value="all">All Statuses</option>
+                                    <option value="pending">Pending</option>
+                                    <option value="approved">Approved</option>
+                                    <option value="wearcheck waiting">WearCheck waiting</option>
+                                    <option value="completed">Completed</option>
+                                </select>
+
+                                <select
+                                    value={typeFilter}
+                                    onChange={(e) => setTypeFilter(e.target.value)}
+                                    className="filter-select"
+                                    aria-label="Type filter"
+                                >
+                                    <option value="all">All Types</option>
+                                    <option value="Breakdown">Breakdown</option>
+                                    <option value="Maintenance">Maintenance</option>
+                                    <option value="Service">Service</option>
+                                    <option value="Tyres">Tyres</option>
+                                    <option value="Other">Other</option>
+                                </select>
+
+                                <select
+                                    value={siteFilter}
+                                    onChange={(e) => setSiteFilter(e.target.value)}
+                                    className="filter-select"
+                                    aria-label="Site filter"
+                                >
+                                    <option value="all">All Sites</option>
+                                    {[...new Set(logs.map(l => l.site_name).filter(Boolean))].map(site => (
+                                        <option key={site} value={site}>{site}</option>
+                                    ))}
+                                </select>
+
+                                <button
+                                    className="btn-secondary"
+                                    onClick={() => {
+                                        setSearchTerm('');
+                                        setStatusFilter('all');
+                                        setTypeFilter('all');
+                                        setSiteFilter('all');
+                                    }}
+                                >
+                                    Clear all
+                                </button>
+                            </div>
+                        </div>
+                    </div>
 
                     {/* Job Cards Table */}
                     <div className="logs-section">
@@ -788,17 +889,9 @@ export default function AdminDashboard() {
                                                     <td className="hide-mobile">{worker?.name || 'Unknown'}</td>
                                                     <td><strong>{log.duration ? log.duration + 'h' : 'N/A'}</strong></td>
                                                     <td>
-                                                        {log.job_type === 'Service' && !log.wearcheck_completed ? (
-                                                            <span className="status-badge pending" title="Awaiting WearCheck completion">
-                                                                ⏳ WearCheck
-                                                            </span>
-                                                        ) : log.status === 'completed' && log.manager_approved && log.downloaded ? (
-                                                            <span className="status-badge completed">✓</span>
-                                                        ) : log.manager_approved ? (
-                                                            <span className="status-badge approved">✓</span>
-                                                        ) : (
-                                                            <span className="status-badge pending">⏳</span>
-                                                        )}
+                                                        <span className={`status-badge ${computeStatusWord(log).replace(' ', '-')}`}>
+                                                            {computeStatusWord(log)}
+                                                        </span>
                                                     </td>
                                                     <td className="action-buttons">
                                                         {!log.manager_approved && (
