@@ -17,6 +17,7 @@ export default function ManageDropdowns() {
     const [brakeDetails, setBrakeDetails] = useState([]);
     const [batteryPositions, setBatteryPositions] = useState([]);
     const [tyreActions, setTyreActions] = useState([]);
+    const [tyreBrands, setTyreBrands] = useState([]);
     const [fluidTypes, setFluidTypes] = useState([]);
 
     // Edit mode states
@@ -65,6 +66,9 @@ export default function ManageDropdowns() {
 
         const { data: fluidData } = await query`SELECT * FROM fluid_types ORDER BY fluid_name`;
         setFluidTypes(fluidData || []);
+
+        const { data: tyreBrandData } = await query`SELECT * FROM tyre_brands ORDER BY brand_name`;
+        setTyreBrands(tyreBrandData || []);
 
         const { data: equipmentData } = await query`SELECT * FROM equipment ORDER BY plant_number`;
         setEquipmentList(equipmentData || []);
@@ -130,6 +134,14 @@ export default function ManageDropdowns() {
         INSERT INTO tyre_actions (action_name, active)
         VALUES (${newItemName}, ${true})
       `;
+            } else if (table === 'tyre_brands') {
+                const { error } = await query`
+    INSERT INTO tyre_brands (brand_name, active)
+    VALUES (${newItemName}, ${true})
+  `;
+                if (error) showMessage('Error adding brand', false);
+                else showMessage('Tyre brand added!');
+
                 if (error) throw error;
             } else if (table === 'fluid_types') {
                 const { error } = await query`
@@ -186,7 +198,12 @@ export default function ManageDropdowns() {
             } else if (table === 'fluid_types') {
                 const { error } = await query`UPDATE fluid_types SET fluid_name = ${newValue} WHERE id = ${id}`;
                 if (error) throw error;
-            }
+            } else if (table === 'tyre_brands') {
+                const { error } = await query`UPDATE tyre_brands SET brand_name = ${newValue} WHERE id = ${id}
+  `;
+            if (error) showMessage('Error updating brand', false);
+            else showMessage('Tyre brand updated!');
+        }
 
             showMessage('Item updated successfully!');
             setEditingId(null);
@@ -234,6 +251,10 @@ export default function ManageDropdowns() {
             } else if (table === 'fluid_types') {
                 const { error } = await query`DELETE FROM fluid_types WHERE id = ${id}`;
                 if (error) throw error;
+            } else if (table === 'tyre_brands') {
+                const { error } = await query`DELETE FROM tyre_brands WHERE id = ${id}`;
+                if (error) showMessage('Error deleting brand (in use by logs?)', false);
+                else showMessage('Tyre brand deleted!');
             }
 
             showMessage('Item deleted successfully!');
@@ -397,6 +418,11 @@ export default function ManageDropdowns() {
             } else if (table === 'fluid_types') {
                 if (field === 'active') {
                     const { error } = await query`UPDATE fluid_types SET active = ${value} WHERE id = ${id}`;
+                    if (error) throw error;
+                }
+            } else if (table === 'tyre_brands') {
+                if (field === 'active') {
+                    const { error } = await query`UPDATE tyre_brands SET active = ${value} WHERE id = ${id}`;
                     if (error) throw error;
                 }
             }
@@ -646,6 +672,12 @@ export default function ManageDropdowns() {
                         <button className={activeTab === 'fluids' ? 'active' : ''} onClick={() => setActiveTab('fluids')}>
                             Fluid Types
                         </button>
+                        <button
+                            className={activeTab === 'tyre_brands' ? 'active' : ''} onClick={() => setActiveTab('tyre_brands')}
+                        >
+                            Tyre Brands
+                        </button>
+
                     </div>
 
                     <div className="tab-content">
@@ -868,7 +900,15 @@ export default function ManageDropdowns() {
                                 {renderAddForm('tyre_actions', 'action_name', false, false, 'e.g., Puncture')}
                             </div>
                         )}
+                        {activeTab === 'tyre_brands' && (
+                            <div className="dropdown-section">
+                                <h3>Tyre Brands</h3>
+                                <p className="description">Manage tyre brands used for New/Swap actions</p>
 
+                                {renderTable(tyreBrands, 'tyre_brands', 'brand_name')}
+                                {renderAddForm('tyre_brands', 'brand_name', false, false, 'e.g., Michelin')}
+                            </div>
+                        )}
                         {activeTab === 'fluids' && (
                             <div className="dropdown-section">
                                 <h3>Fluid & Oil Types</h3>
