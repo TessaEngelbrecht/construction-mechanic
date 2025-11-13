@@ -24,7 +24,7 @@ export default function AdminDashboard() {
         pendingApproval: 0,
         completedCount: 0
     });
-    const [searchTerm, setSearchTerm] = useState('');
+    //const [searchTerm, setSearchTerm] = useState('');
 
 
     useEffect(() => {
@@ -199,23 +199,23 @@ export default function AdminDashboard() {
         }
     };
 
-    const getSearchFilteredLogs = () => {
-        let logs = getFilteredLogs();
+    // const getSearchFilteredLogs = () => {
+    //     let logs = getFilteredLogs();
 
-        if (!searchTerm.trim()) return logs;
+    //     if (!searchTerm.trim()) return logs;
 
-        const search = searchTerm.toLowerCase();
-        return logs.filter(log => {
-            // Search across multiple fields
-            return (
-                log.jobcard_number?.toLowerCase().includes(search) ||
-                log.plant_number?.toLowerCase().includes(search) ||
-                log.site_name?.toLowerCase().includes(search) ||
-                users.find(u => u.id === log.user_id)?.name?.toLowerCase().includes(search) ||
-                log.job_type?.toLowerCase().includes(search)
-            );
-        });
-    };
+    //     const search = searchTerm.toLowerCase();
+    //     return logs.filter(log => {
+    //         // Search across multiple fields
+    //         return (
+    //             log.jobcard_number?.toLowerCase().includes(search) ||
+    //             log.plant_number?.toLowerCase().includes(search) ||
+    //             log.site_name?.toLowerCase().includes(search) ||
+    //             users.find(u => u.id === log.user_id)?.name?.toLowerCase().includes(search) ||
+    //             log.job_type?.toLowerCase().includes(search)
+    //         );
+    //     });
+    // };
 
 
     const parseArray = (data) => {
@@ -563,7 +563,7 @@ export default function AdminDashboard() {
     };
 
     const exportToExcel = () => {
-        const filteredLogs = getSearchFilteredLogs();
+        //const filteredLogs = getSearchFilteredLogs();
 
 
         const excelData = filteredLogs.map((log) => {
@@ -718,25 +718,6 @@ export default function AdminDashboard() {
                         </div>
 
                         <div className="search-export-group">
-                            <div className="search-container">
-                                <input
-                                    type="text"
-                                    placeholder="🔍 Search job cards..."
-                                    value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="search-input"
-                                />
-                                {searchTerm && (
-                                    <button
-                                        onClick={() => setSearchTerm('')}
-                                        className="btn-clear-search"
-                                        title="Clear search"
-                                    >
-                                        ✕
-                                    </button>
-                                )}
-                            </div>
-
                             <button onClick={exportToExcel} className="btn-export-excel">
                                 📊 Export Excel
                             </button>

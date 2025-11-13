@@ -19,6 +19,7 @@ export default function Signup() {
 
     const handleChange = (e) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
+        setError('');
     };
 
     const handleSignup = async (e) => {
@@ -31,10 +32,10 @@ export default function Signup() {
             // Auto-format phone number
             const formattedPhone = formatPhoneNumber(formData.phone);
 
-            // Check if user exists - TAGGED TEMPLATE
+            // Check if user exists
             const { data: existingUser } = await query`
-      SELECT * FROM users WHERE phone = ${formattedPhone} LIMIT 1
-    `;
+    SELECT * FROM users WHERE phone = ${formattedPhone} LIMIT 1
+  `;
 
             if (existingUser && existingUser.length > 0) {
                 setError('User with this phone number already exists.');
@@ -42,41 +43,78 @@ export default function Signup() {
                 return;
             }
 
+            // Validate passwords match
             if (formData.password !== formData.confirmPassword) {
                 setError('Passwords do not match');
                 setLoading(false);
                 return;
             }
 
+            // Validate password length
             if (formData.password.length < 6) {
                 setError('Password must be at least 6 characters');
                 setLoading(false);
                 return;
             }
 
-            // Check if admin
-            const isAdmin = formattedPhone === '+27844062222';
+            // Determine if admin based on email or phone
+            const isAdmin = formData.email?.toLowerCase().includes('admin') ||
+                formattedPhone === '+27844062222';
+            const userRole = isAdmin ? 'admin' : 'mechanic';
 
-            // Insert new user - TAGGED TEMPLATE
+            // Insert user with hashed password using PostgreSQL's crypt function
             const { error: insertError } = await query`
-  INSERT INTO users (phone, name, email, is_admin, role, password_hash) VALUES (${formattedPhone}, ${formData.name}, ${formData.email}, ${isAdmin}, ${isAdmin ? 'admin' : 'mechanic'}, ${formData.password}) RETURNING *
-`;
+    INSERT INTO users (phone, name, email, is_admin, role, password) 
+    VALUES (
+      ${formattedPhone}, 
+      ${formData.name}, 
+      ${formData.email || null}, 
+      ${isAdmin}, 
+      ${userRole}, 
+      crypt(${formData.password}, gen_salt('bf', 10))
+    )
+  `;
 
             if (insertError) {
+                console.error('Signup error:', insertError);
                 setError('Signup failed. Please try again.');
                 setLoading(false);
                 return;
             }
 
-            setSuccess('Account created successfully! Redirecting to login...');
-            setTimeout(() => navigate('/login'), 2000);
+            // Get the newly created user (without password)
+            const { data: newUser } = await query`
+    SELECT id, phone, name, email, is_admin, role, created_at 
+    FROM users 
+    WHERE phone = ${formattedPhone}
+  `;
+
+            if (newUser && newUser.length > 0) {
+                localStorage.setItem('currentUser', JSON.stringify(newUser));
+
+                setSuccess('Account created successfully! Redirecting...');
+
+                setTimeout(() => {
+                    // Route based on role
+                    if (newUser.role === 'admin' || newUser.is_admin) {
+                        navigate('/admin');
+                    } else if (newUser.role === 'clerk') {
+                        navigate('/clerk');
+                    } else {
+                        navigate('/mechanic');
+                    }
+                }, 1500);
+            } else {
+                setError('Account created but unable to log in. Please try logging in manually.');
+                setTimeout(() => navigate('/login'), 2000);
+            }
         } catch (err) {
+            console.error('Signup error:', err);
             setError('Signup failed. Please try again.');
         }
 
         setLoading(false);
     };
-
 
     return (
         <div className="auth-container">
@@ -86,13 +124,12 @@ export default function Signup() {
                     <h2>Create Account</h2>
                     <p className="auth-subtitle">Join our construction team</p>
                 </div>
-
                 {error && <div className="error-message">{error}</div>}
                 {success && <div className="success-message">{success}</div>}
 
                 <form onSubmit={handleSignup}>
                     <div className="form-group">
-                        <label>Full Name</label>
+                        <label>Full Name *</label>
                         <input
                             type="text"
                             name="name"
@@ -104,7 +141,7 @@ export default function Signup() {
                     </div>
 
                     <div className="form-group">
-                        <label>Phone Number</label>
+                        <label>Phone Number *</label>
                         <input
                             type="tel"
                             name="phone"
@@ -125,13 +162,15 @@ export default function Signup() {
                             value={formData.email}
                             onChange={handleChange}
                         />
+                        <small>Use 'admin' in email to get admin access</small>
                     </div>
+
                     <div className="form-group">
-                        <label>Password</label>
+                        <label>Password *</label>
                         <input
                             type="password"
                             name="password"
-                            placeholder="Create a password"
+                            placeholder="Create a password (min 6 characters)"
                             value={formData.password}
                             onChange={handleChange}
                             minLength="6"
@@ -140,7 +179,7 @@ export default function Signup() {
                     </div>
 
                     <div className="form-group">
-                        <label>Confirm Password</label>
+                        <label>Confirm Password *</label>
                         <input
                             type="password"
                             name="confirmPassword"
@@ -150,7 +189,6 @@ export default function Signup() {
                             required
                         />
                     </div>
-
 
                     <button type="submit" disabled={loading} className="btn-primary">
                         {loading ? 'Creating account...' : 'Sign Up'}

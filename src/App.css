@@ -2905,3 +2905,53 @@ body {
     width: 100%;
   }
 }
+.test-credentials {
+margin-top: 24px;
+padding: 16px;
+background: #FFF3CD;
+border-radius: 8px;
+border: 2px dashed #F39C12;
+}
+
+.test-title {
+margin: 0 0 12px 0;
+font-size: 14px;
+font-weight: 600;
+color: #856404;
+text-align: center;
+}
+
+.btn-test {
+width: 100%;
+padding: 10px;
+margin-bottom: 8px;
+background: white;
+color: var(--primary);
+border: 2px solid var(--primary);
+border-radius: 6px;
+font-size: 14px;
+font-weight: 600;
+cursor: pointer;
+transition: all 0.2s;
+}
+
+.btn-test:hover {
+background: var(--primary);
+color: white;
+transform: translateY(-2px);
+}
+
+.btn-test:last-child {
+margin-bottom: 0;
+}
+
+@media (max-width: 768px) {
+.test-credentials {
+padding: 12px;
+}
+
+.btn-test {
+font-size: 13px;
+padding: 8px;
+}
+}

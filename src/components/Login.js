@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { query } from '../utils/neonClient';
-//import bcrypt from 'bcryptjs';
 
 export default function Login() {
     const [formData, setFormData] = useState({
@@ -35,8 +34,20 @@ export default function Login() {
         try {
             const formattedPhone = formatPhoneNumber(formData.phone);
 
+            // Query user and verify password using PostgreSQL's crypt function
+            // This compares the entered password with the stored hash
             const { data: users } = await query`
-        SELECT * FROM users WHERE phone = ${formattedPhone}
+        SELECT
+          u.id,
+          u.phone,
+          u.name,
+          u.email,
+          u.is_admin,
+          u.role,
+          u.created_at,
+          (u.password = crypt(${formData.password}, u.password)) as password_match
+        FROM users u
+        WHERE u.phone = ${formattedPhone}
       `;
 
             if (!users || users.length === 0) {
@@ -47,22 +58,22 @@ export default function Login() {
 
             const user = users[0];
 
-            // Check password
-            if (!user.password_hash) {
+            // Check if password exists
+            if (user.password_match === null) {
                 setError('Please contact admin to set up your password.');
                 setLoading(false);
                 return;
             }
 
-            // For now, simple comparison (in production, use bcrypt.compare)
-            // const passwordMatch = await bcrypt.compare(formData.password, user.password_hash);
-            const passwordMatch = formData.password === user.password_hash; // Temporary simple check
-
-            if (!passwordMatch) {
+            // Check password match (done by PostgreSQL crypt comparison)
+            if (!user.password_match) {
                 setError('Incorrect password. Please try again.');
                 setLoading(false);
                 return;
             }
+
+            // Remove password_match from stored user data (don't store in localStorage)
+            delete user.password_match;
 
             localStorage.setItem('currentUser', JSON.stringify(user));
 
@@ -121,6 +132,32 @@ export default function Login() {
                     <button type="submit" disabled={loading} className="btn-primary">
                         {loading ? 'Logging in...' : 'Login'}
                     </button>
+
+                    {/* TEST CREDENTIALS - Remove in production */}
+                    <div className="test-credentials">
+                        <p className="test-title">Test Accounts:</p>
+                        <button
+                            type="button"
+                            className="btn-test"
+                            onClick={() => setFormData({ phone: '0811111111', password: 'admin123' })}
+                        >
+                            Admin
+                        </button>
+                        <button
+                            type="button"
+                            className="btn-test"
+                            onClick={() => setFormData({ phone: '0822222222', password: 'clerk123' })}
+                        >
+                            Clerk
+                        </button>
+                        <button
+                            type="button"
+                            className="btn-test"
+                            onClick={() => setFormData({ phone: '0833333333', password: 'mech123' })}
+                        >
+                            Mechanic
+                        </button>
+                    </div>
 
                     <p className="auth-switch">
                         Don't have an account? <a href="/signup">Sign Up</a>
