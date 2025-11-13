@@ -113,7 +113,7 @@ export default function ClerkDashboard() {
         `;
             }
 
-            alert('WearCheck updated successfully!');
+            //alert('WearCheck updated successfully!');
             setEditingId(null);
             fetchServiceJobs();
         } catch (error) {

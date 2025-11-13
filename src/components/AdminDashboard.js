@@ -273,7 +273,7 @@ export default function AdminDashboard() {
 
         if (!error) {
             fetchData();
-            alert('Job card approved successfully!');
+            //alert('Job card approved successfully!');
         } else {
             alert('Error approving job card');
         }
@@ -774,7 +774,7 @@ export default function AdminDashboard() {
                                     ) : (
                                         filteredLogs.map((log) => {
                                             const worker = users.find((u) => u.id === log.user_id);
-                                            const isCompleted = log.status === 'completed' && log.manager_approved && log.downloaded;
+                                            //const isCompleted = log.status === 'completed' && log.manager_approved && log.downloaded;
 
                                             return (
                                                 <tr key={log.id}>

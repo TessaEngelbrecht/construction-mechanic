@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { query } from '../utils/neonClient';
-import bcrypt from 'bcryptjs';
+//import bcrypt from 'bcryptjs';
 
 export default function Login() {
     const [formData, setFormData] = useState({
