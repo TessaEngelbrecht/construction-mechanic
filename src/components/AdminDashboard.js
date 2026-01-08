@@ -170,19 +170,19 @@ export default function AdminDashboard() {
         const day = String(now.getDate()).padStart(2, '0');
         const today = `${year}-${month}-${day}`;
 
-        console.log('Current filter:', filter);
-        console.log('Today\'s date:', today);
-        console.log('Total logs:', logs.length);
+        // console.log('Current filter:', filter);
+        // console.log('Today\'s date:', today);
+        // console.log('Total logs:', logs.length);
 
         switch (filter) {
             case 'daily': {
                 const filtered = logs.filter((log) => {
                     const logDate = formatDate(log.date);
                     const matches = logDate === today;
-                    console.log(`Log date: ${logDate}, Today: ${today}, Matches: ${matches}`);
+                    //console.log(`Log date: ${logDate}, Today: ${today}, Matches: ${matches}`);
                     return matches;
                 });
-                console.log('Daily filtered results:', filtered.length);
+                //('Daily filtered results:', filtered.length);
                 return filtered;
             }
             case 'weekly': {
