@@ -145,6 +145,18 @@ export default function AdminDashboard() {
         const unit = log.kilos_hours_unit || 'hours';
         return unit === 'hours' ? `${value}h` : `${value} km`;
     };
+    const getJobTypes = (log) => {
+        if (!log) return [];
+        if (Array.isArray(log.job_types)) return log.job_types;
+        if (typeof log.job_types === 'string') {
+            try {
+                return JSON.parse(log.job_types);
+            } catch {
+                return log.job_type ? [log.job_type] : [];
+            }
+        }
+        return log.job_type ? [log.job_type] : [];
+    };
 
 
     const getFilteredLogs = () => {
@@ -226,8 +238,11 @@ export default function AdminDashboard() {
             const wordStatus = computeStatusWord(log);
             if (statusFilter !== 'all' && wordStatus !== statusFilter) return false;
 
-            // job type filter
-            if (typeFilter !== 'all' && log.job_type !== typeFilter) return false;
+            // job type filter (supports multiple)
+            if (typeFilter !== 'all') {
+                const types = getJobTypes(log);
+                if (!types.includes(typeFilter)) return false;
+            }
 
             // site filter
             if (siteFilter !== 'all' && log.site_name !== siteFilter) return false;
@@ -235,14 +250,20 @@ export default function AdminDashboard() {
             // search across fields
             if (!search) return true;
             const mechanic = users.find(u => u.id === log.user_id)?.name || '';
+            const types = getJobTypes(log);
+
             const haystack = [
                 log.jobcard_number,
                 log.plant_number,
                 log.site_name,
                 mechanic,
                 log.job_type,
+                ...(types || []),
                 log.sample_number
-            ].filter(Boolean).join(' ').toLowerCase();
+            ]
+                .filter(Boolean)
+                .join(' ')
+                .toLowerCase();
 
             return haystack.includes(search);
         });
@@ -317,6 +338,7 @@ export default function AdminDashboard() {
         const doc = new jsPDF();
         const worker = users.find((u) => u.id === log.user_id);
         const equipmentInfo = equipment.find((eq) => eq.plant_number === log.plant_number);
+        const types = getJobTypes(log);
 
         // Header
         doc.setFontSize(22);
@@ -345,7 +367,7 @@ export default function AdminDashboard() {
             ['Site:', log.site_name],
             ['Plant:', `${log.plant_number} ${equipmentInfo ? `(${equipmentInfo.equipment_type})` : ''}`],
             ['Kilos/Hours:', formatKilosHours(log)],
-            ['Job Type:', log.job_type],
+            ['Job Types:', (types.length ? types.join(', ') : log.job_type || 'N/A')],
             ['Mechanic:', worker?.name || 'Unknown']
         ];
 
@@ -356,7 +378,6 @@ export default function AdminDashboard() {
             doc.text(value, 60, yPos);
             yPos += 7;
         });
-
         // Job Details
         yPos += 5;
         doc.setFont(undefined, 'bold');
@@ -510,7 +531,7 @@ export default function AdminDashboard() {
         }
 
         // WearCheck Information (for Service jobs)
-        if (log.job_type === 'Service') {
+        if (types.includes('Service')) {
             if (yPos > 210) {
                 doc.addPage();
                 yPos = 20;
@@ -606,6 +627,7 @@ export default function AdminDashboard() {
             const maintenance = parseArray(log.maintenance_issues_array);
             const tyres = parseArray(log.tyres_array);
             const fluids = parseArray(log.fluids_used);
+            const types = getJobTypes(log);
 
             return {
                 'Job Card #': log.jobcard_number,
@@ -614,7 +636,8 @@ export default function AdminDashboard() {
                 'Plant': log.plant_number,
                 'Kilos/Hours': log.kilos_hours_value ?? log.kilos_hours,
                 'Kilos/Hours Unit': log.kilos_hours_unit || 'hours',
-                'Job Type': log.job_type,
+                'Job Types': types.join(', '),
+                'Job Type (primary)': types[0] || log.job_type || '',
                 'Breakdown Issues': breakdown.map(b => b.detail ? `${b.issue} (${b.detail})` : b.issue).join('; '),
                 'Maintenance Issues': maintenance.map(m => {
                     if (m.detail) return `${m.issue} (${m.detail})`;
@@ -654,6 +677,7 @@ export default function AdminDashboard() {
         XLSX.writeFile(workbook, fileName);
     };
     const filteredLogs = getSearchFilteredLogs();
+    const selectedTypes = selectedJobCard ? getJobTypes(selectedJobCard) : [];
 
     if (!user || loading) {
         return (
@@ -865,12 +889,15 @@ export default function AdminDashboard() {
                                     ) : (
                                         filteredLogs.map((log) => {
                                             const worker = users.find((u) => u.id === log.user_id);
-                                            //const isCompleted = log.status === 'completed' && log.manager_approved && log.downloaded;
+                                            const types = getJobTypes(log);
 
                                             return (
                                                 <tr key={log.id}>
                                                     <td>
-                                                        <strong className="jobcard-link" onClick={() => setSelectedJobCard(log)}>
+                                                        <strong
+                                                            className="jobcard-link"
+                                                            onClick={() => setSelectedJobCard(log)}
+                                                        >
                                                             {log.jobcard_number}
                                                         </strong>
                                                     </td>
@@ -878,13 +905,21 @@ export default function AdminDashboard() {
                                                     <td className="hide-mobile">{log.site_name}</td>
                                                     <td><strong>{log.plant_number}</strong></td>
                                                     <td className="hide-mobile">
-                                                        <span className={`type-badge ${log.job_type.toLowerCase()}`}>
-                                                            {log.job_type}
-                                                        </span>
+                                                        {types.length === 0 ? (
+                                                            <span className={`type-badge ${log.job_type.toLowerCase()}`}>
+                                                                {log.job_type}
+                                                            </span>
+                                                        ) : (
+                                                            types.map(t => (
+                                                                <span key={t} className={`type-badge ${t.toLowerCase()}`}>
+                                                                    {t}
+                                                                </span>
+                                                            ))
+                                                        )}
                                                     </td>
                                                     <td className="hide-tablet details-cell">
                                                         {formatIssuesForDisplay(log)}
-                                                        {log.job_type === 'Service' && (
+                                                        {types.includes('Service') && (
                                                             <div className="wearcheck-indicator">
                                                                 {log.wearcheck_completed ? (
                                                                     <span className="wearcheck-badge completed">✓ WearCheck Done</span>
@@ -894,7 +929,6 @@ export default function AdminDashboard() {
                                                             </div>
                                                         )}
                                                     </td>
-
                                                     <td className="hide-mobile">{worker?.name || 'Unknown'}</td>
                                                     <td><strong>{log.duration ? log.duration + 'h' : 'N/A'}</strong></td>
                                                     <td>
@@ -925,6 +959,7 @@ export default function AdminDashboard() {
                                         })
                                     )}
                                 </tbody>
+
                             </table>
                         </div>
                     </div>
@@ -994,8 +1029,9 @@ export default function AdminDashboard() {
                             </div>
 
                             <div className="detail-row">
-                                <strong>Job Type:</strong> {selectedJobCard.job_type}
+                                <strong>Job Types:</strong> {selectedTypes.join(', ')}
                             </div>
+
                             <div className="detail-row">
                                 <strong>Mechanic:</strong> {users.find(u => u.id === selectedJobCard.user_id)?.name}
                             </div>
@@ -1048,7 +1084,7 @@ export default function AdminDashboard() {
                                 </div>
                             )}
 
-                            {selectedJobCard.job_type === 'Service' && (
+                            {selectedTypes.includes('Service') && (
                                 <div className="detail-section wearcheck-section">
                                     <strong>🔬 WearCheck Information:</strong>
                                     <div className="wearcheck-details">

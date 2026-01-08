@@ -11,7 +11,7 @@ export default function MechanicForm() {
         kilos_hours_value: '',
         kilos_hours_unit: 'hours',
         job_type: '',
-
+        job_types: [],
         // Arrays for multiple issues
         tyres: [],
         breakdownIssues: [{ issue: '', detail: '', sub_option: '' }],
@@ -264,17 +264,28 @@ export default function MechanicForm() {
         );
         return hasHydraulicBreakdown || hasFluidMaintenance;
     };
+    const jobTypes = Array.isArray(formData.job_types) ? formData.job_types : [];
+
+    const hasBreakdown = jobTypes.includes('Breakdown');
+    const hasMaintenance = jobTypes.includes('Maintenance');
+    const hasService = jobTypes.includes('Service');
+    const hasTyres = jobTypes.includes('Tyres');
+    const hasOther = jobTypes.includes('Other');
+
+
 
     const validateForm = () => {
         if (!formData.site_name) return 'Site name is required';
         if (!formData.plant_number) return 'Plant number is required';
         if (!formData.kilos_hours_value) return 'Kilos/Hours value is required';
         if (!formData.kilos_hours_unit) return 'Please choose kilos or hours';
-        if (!formData.job_type) return 'Job type is required';
+        if (!formData.job_types || formData.job_types.length === 0)
+            return 'At least one job type is required';
         if (!formData.time_started) return 'Time started is required';
-        if (!formData.time_ended) return 'Time ended is required';
+        if (!formData.time_ended) return 'Time ended is required'
 
-        if (formData.job_type === 'Breakdown') {
+
+        if (hasBreakdown) {
             if (formData.breakdownIssues.length === 0) return 'Please add at least one breakdown issue';
             for (let issue of formData.breakdownIssues) {
                 if (!issue.issue) return 'Please select an issue type for all breakdown issues';
@@ -284,7 +295,7 @@ export default function MechanicForm() {
             }
         }
 
-        if (formData.job_type === 'Maintenance') {
+        if (hasMaintenance) {
             if (formData.maintenanceIssues.length === 0) return 'Please add at least one maintenance issue';
             for (let issue of formData.maintenanceIssues) {
                 if (!issue.issue) return 'Please select an issue type';
@@ -297,12 +308,12 @@ export default function MechanicForm() {
             }
         }
 
-        if (formData.job_type === 'Service') {
+        if (hasService) {
             if (!formData.service_interval) return 'Please select service interval';
             if (!formData.sample_number) return 'Sample number is required for services';
         }
 
-        if (formData.job_type === 'Tyres') {
+        if (hasTyres) {
             if (formData.tyres.length === 0) return 'Please add at least one tyre';
             for (let tyre of formData.tyres) {
                 if (!tyre.tyre_number) return 'Please enter tyre number';
@@ -318,7 +329,7 @@ export default function MechanicForm() {
         }
 
 
-        if (formData.job_type === 'Other' && !formData.other_description) {
+        if (hasOther && !formData.other_description) {
             return 'Description is required for Other job type';
         }
 
@@ -348,7 +359,7 @@ export default function MechanicForm() {
             const { error } = await query`
   INSERT INTO work_logs (
     jobcard_number, user_id, date, site_name, plant_number, kilos_hours, kilos_hours_value, kilos_hours_unit,
-    job_type, breakdown_issues_array, maintenance_issues_array, tyres_array,
+    job_type, job_types, breakdown_issues_array, maintenance_issues_array, tyres_array,
     service_interval, sample_number, other_description, work_to_plan,
     time_started, time_ended, duration, delay_reason, fluids_used,
     status, manager_approved
@@ -356,7 +367,7 @@ export default function MechanicForm() {
     ${jobcardNumber}, ${user.id}, ${formData.date}, ${formData.site_name},
     ${formData.plant_number}, ${parseInt(formData.kilos_hours_value)}, ${parseInt(formData.kilos_hours_value)},
     ${formData.kilos_hours_unit},
-    ${formData.job_type}, ${JSON.stringify(formData.breakdownIssues)},
+    ${formData.job_types[0] || null}, ${JSON.stringify(formData.job_types)}, ${JSON.stringify(formData.breakdownIssues)},
     ${JSON.stringify(formData.maintenanceIssues)}, ${JSON.stringify(formData.tyres)},
     ${formData.service_interval || null}, ${formData.sample_number || null},
     ${formData.other_description || null}, ${formData.work_to_plan || null},
@@ -412,6 +423,18 @@ export default function MechanicForm() {
 
         setLoading(false);
     };
+    const getJobTypes = (log) => {
+        if (Array.isArray(log.job_types)) return log.job_types;
+        if (typeof log.job_types === 'string') {
+            try {
+                return JSON.parse(log.job_types);
+            } catch {
+                return log.job_type ? [log.job_type] : [];
+            }
+        }
+        return log.job_type ? [log.job_type] : [];
+    };
+
 
     const formatDate = (dateValue) => {
         if (!dateValue) return 'N/A';
@@ -504,19 +527,35 @@ export default function MechanicForm() {
 
                         {/* Job Type */}
                         <div className="form-group">
-                            <label>Job Type *</label>
-                            <select name="job_type" value={formData.job_type} onChange={handleChange} required>
-                                <option value="">Select Type</option>
-                                <option value="Breakdown">Breakdown</option>
-                                <option value="Maintenance">Maintenance</option>
-                                <option value="Service">Service</option>
-                                <option value="Tyres">Tyres</option>
-                                <option value="Other">Other</option>
-                            </select>
+                            <label>Job Types *</label>
+                            <div className="job-type-checkboxes">
+                                {['Breakdown', 'Maintenance', 'Service', 'Tyres', 'Other'].map(type => (
+                                    <label key={type}>
+                                        <input
+                                            type="checkbox"
+                                            checked={Array.isArray(formData.job_types) && formData.job_types.includes(type)}
+                                            onChange={(e) => {
+                                                setFormData(prev => {
+                                                    const selected = new Set(prev.job_types);
+                                                    if (e.target.checked) selected.add(type);
+                                                    else selected.delete(type);
+                                                    const arr = Array.from(selected);
+                                                    return {
+                                                        ...prev,
+                                                        job_types: arr,
+                                                        job_type: arr[0] || '' // keep first as primary
+                                                    };
+                                                });
+                                            }}
+                                        />
+                                        {type}
+                                    </label>
+                                ))}
+                            </div>
                         </div>
 
                         {/* BREAKDOWN - Multiple Issues */}
-                        {formData.job_type === 'Breakdown' && (
+                        {hasBreakdown && (
                             <div className="issues-section">
                                 <div className="section-header">
                                     <h4>Breakdown Issues</h4>
@@ -608,7 +647,7 @@ export default function MechanicForm() {
 
 
                         {/* MAINTENANCE - Multiple Issues */}
-                        {formData.job_type === 'Maintenance' && (
+                        {hasMaintenance && (
                             <div className="issues-section">
                                 <div className="section-header">
                                     <h4>Maintenance Issues</h4>
@@ -726,7 +765,7 @@ export default function MechanicForm() {
 
 
                         {/* SERVICE */}
-                        {formData.job_type === 'Service' && (
+                        {hasService && (
                             <>
                                 <div className="form-group">
                                     <label>Service Interval *</label>
@@ -756,7 +795,7 @@ export default function MechanicForm() {
                         )}
 
                         {/* TYRES - Multiple */}
-                        {formData.job_type === 'Tyres' && (
+                        {hasTyres && (
                             <div className="issues-section">
                                 <div className="section-header">
                                     <h4>Tyres</h4>
@@ -866,7 +905,7 @@ export default function MechanicForm() {
 
 
                         {/* OTHER */}
-                        {formData.job_type === 'Other' && (
+                        {hasOther && (
                             <div className="form-group">
                                 <label>Description *</label>
                                 <textarea
@@ -980,25 +1019,30 @@ export default function MechanicForm() {
                             <p className="no-logs">No job cards yet. Submit your first one above!</p>
                         ) : (
                             <div className="logs-grid">
-                                {recentLogs.map((log) => (
-                                    <div key={log.id} className="log-card">
-                                        <div className="log-header">
-                                            <span className="jobcard-number">#{log.jobcard_number}</span>
-                                            <span className="log-date">📅 {formatDate(log.date)}</span>
-                                        </div>
-                                        <div className="log-plant-info">
-                                            <strong>{log.plant_number}</strong> | {log.site_name} | {log.kilos_hours}h | {log.job_type}
-                                        </div>
-                                        {log.duration && (
-                                            <p className="log-duration">⏱️ Duration: {log.duration}h</p>
-                                        )}
-                                        <div className="log-status">
-                                            <span className={`status-badge ${log.manager_approved ? 'approved' : 'pending'}`}>
-                                                {log.manager_approved ? '✓ Approved' : '⏳ Pending Approval'}
-                                            </span>
-                                        </div>
-                                    </div>
-                                ))}
+                                    {recentLogs.map(log => {
+                                        const types = getJobTypes(log);
+
+                                        return (
+                                            <div key={log.id} className="log-card">
+                                                <div className="log-header">
+                                                    <span className="jobcard-number">{log.jobcard_number}</span>
+                                                    <span className="log-date">{formatDate(log.date)}</span>
+                                                </div>
+                                                <div className="log-plant-info">
+                                                    <strong>{log.plant_number}</strong> | {log.site_name} | {log.kilos_hours}h | {types.join(', ')}
+                                                </div>
+                                                {log.duration && (
+                                                    <p className="log-duration">Duration: {log.duration}h</p>
+                                                )}
+                                                <div className="log-status">
+                                                    <span className={`status-badge ${log.manager_approved ? 'approved' : 'pending'}`}>
+                                                        {log.manager_approved ? '✓ Approved' : '⏳ Pending Approval'}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+
                             </div>
                         )}
                     </div>
