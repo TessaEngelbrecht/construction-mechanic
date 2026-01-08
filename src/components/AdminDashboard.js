@@ -139,6 +139,14 @@ export default function AdminDashboard() {
         }
     };
 
+    const formatKilosHours = (log) => {
+        const value = log.kilos_hours_value ?? log.kilos_hours; // fallback for old rows
+        if (!value && value !== 0) return 'N/A';
+        const unit = log.kilos_hours_unit || 'hours';
+        return unit === 'hours' ? `${value}h` : `${value} km`;
+    };
+
+
     const getFilteredLogs = () => {
         if (!Array.isArray(logs) || logs.length === 0) {
             return [];
@@ -336,7 +344,7 @@ export default function AdminDashboard() {
             ['Date:', formatDate(log.date)],
             ['Site:', log.site_name],
             ['Plant:', `${log.plant_number} ${equipmentInfo ? `(${equipmentInfo.equipment_type})` : ''}`],
-            ['Kilos/Hours:', `${log.kilos_hours}h`],
+            ['Kilos/Hours:', formatKilosHours(log)],
             ['Job Type:', log.job_type],
             ['Mechanic:', worker?.name || 'Unknown']
         ];
@@ -604,7 +612,8 @@ export default function AdminDashboard() {
                 'Date': formatDate(log.date),
                 'Site': log.site_name,
                 'Plant': log.plant_number,
-                'Kilos/Hours': log.kilos_hours,
+                'Kilos/Hours': log.kilos_hours_value ?? log.kilos_hours,
+                'Kilos/Hours Unit': log.kilos_hours_unit || 'hours',
                 'Job Type': log.job_type,
                 'Breakdown Issues': breakdown.map(b => b.detail ? `${b.issue} (${b.detail})` : b.issue).join('; '),
                 'Maintenance Issues': maintenance.map(m => {
@@ -981,8 +990,9 @@ export default function AdminDashboard() {
                                 <strong>Plant:</strong> {selectedJobCard.plant_number}
                             </div>
                             <div className="detail-row">
-                                <strong>Kilos/Hours:</strong> {selectedJobCard.kilos_hours}h
+                                <strong>Kilos/Hours:</strong> {formatKilosHours(selectedJobCard)}
                             </div>
+
                             <div className="detail-row">
                                 <strong>Job Type:</strong> {selectedJobCard.job_type}
                             </div>

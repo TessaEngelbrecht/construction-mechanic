@@ -8,7 +8,8 @@ export default function MechanicForm() {
         date: new Date().toISOString().slice(0, 10),
         site_name: '',
         plant_number: '',
-        kilos_hours: '',
+        kilos_hours_value: '',
+        kilos_hours_unit: 'hours',
         job_type: '',
 
         // Arrays for multiple issues
@@ -104,7 +105,7 @@ export default function MechanicForm() {
             const equipment = equipmentList.find(eq => eq.plant_number === value);
             if (equipment) {
                 setSelectedEquipment(equipment);
-                setFormData(prev => ({ ...prev, kilos_hours: equipment.current_kilos_hours }));
+                setFormData(prev => ({ ...prev, kilos_hours_value: equipment.current_kilos_hours }));
             }
         }
 
@@ -267,7 +268,8 @@ export default function MechanicForm() {
     const validateForm = () => {
         if (!formData.site_name) return 'Site name is required';
         if (!formData.plant_number) return 'Plant number is required';
-        if (!formData.kilos_hours) return 'Kilos/Hours is required';
+        if (!formData.kilos_hours_value) return 'Kilos/Hours value is required';
+        if (!formData.kilos_hours_unit) return 'Please choose kilos or hours';
         if (!formData.job_type) return 'Job type is required';
         if (!formData.time_started) return 'Time started is required';
         if (!formData.time_ended) return 'Time ended is required';
@@ -345,14 +347,15 @@ export default function MechanicForm() {
 
             const { error } = await query`
   INSERT INTO work_logs (
-    jobcard_number, user_id, date, site_name, plant_number, kilos_hours,
+    jobcard_number, user_id, date, site_name, plant_number, kilos_hours, kilos_hours_value, kilos_hours_unit,
     job_type, breakdown_issues_array, maintenance_issues_array, tyres_array,
     service_interval, sample_number, other_description, work_to_plan,
     time_started, time_ended, duration, delay_reason, fluids_used,
     status, manager_approved
   ) VALUES (
     ${jobcardNumber}, ${user.id}, ${formData.date}, ${formData.site_name},
-    ${formData.plant_number}, ${parseInt(formData.kilos_hours)},
+    ${formData.plant_number}, ${parseInt(formData.kilos_hours_value)}, ${parseInt(formData.kilos_hours_value)},
+    ${formData.kilos_hours_unit},
     ${formData.job_type}, ${JSON.stringify(formData.breakdownIssues)},
     ${JSON.stringify(formData.maintenanceIssues)}, ${JSON.stringify(formData.tyres)},
     ${formData.service_interval || null}, ${formData.sample_number || null},
@@ -383,7 +386,8 @@ export default function MechanicForm() {
                     date: new Date().toISOString().slice(0, 10),
                     site_name: '',
                     plant_number: '',
-                    kilos_hours: '',
+                    kilos_hours_value: '',
+                    kilos_hours_unit: 'hours',
                     job_type: '',
                     breakdownIssues: [],
                     maintenanceIssues: [],
@@ -461,20 +465,42 @@ export default function MechanicForm() {
                         </div>
 
                         <div className="form-group">
-                            <label>Kilos/Hours *</label>
-                            <input
-                                type="number"
-                                name="kilos_hours"
-                                placeholder="Hours"
-                                value={formData.kilos_hours}
-                                onChange={handleChange}
-                                min={selectedEquipment ? selectedEquipment.current_kilos_hours : 0}
-                                required
-                            />
-                            {selectedEquipment && (
-                                <small>Current: {selectedEquipment.current_kilos_hours}h (minimum value)</small>
-                            )}
+                            <label>Kilos / Hours *</label>
+                            <div className="form-row">
+                                <div className="form-group" style={{ flex: '0 0 120px' }}>
+                                    <label>Unit</label>
+                                    <select
+                                        name="kilos_hours_unit"
+                                        value={formData.kilos_hours_unit}
+                                        onChange={handleChange}
+                                        required
+                                    >
+                                        <option value="hours">Hours</option>
+                                        <option value="kilos">Kilos</option>
+                                    </select>
+                                </div>
+
+                                <div className="form-group" style={{ flex: 1 }}>
+                                    <label>Value</label>
+                                    <input
+                                        type="number"
+                                        name="kilos_hours_value"
+                                        placeholder={formData.kilos_hours_unit === 'hours' ? 'Hours' : 'Kilos'}
+                                        value={formData.kilos_hours_value}
+                                        onChange={handleChange}
+                                        min={0}
+                                        required
+                                    />
+                                    {selectedEquipment && (
+                                        <small>
+                                            Current: {selectedEquipment.current_kilos_hours}
+                                            {formData.kilos_hours_unit === 'hours' ? 'h' : ' km'} (reference)
+                                        </small>
+                                    )}
+                                </div>
+                            </div>
                         </div>
+
 
                         {/* Job Type */}
                         <div className="form-group">
