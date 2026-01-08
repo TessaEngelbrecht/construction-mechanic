@@ -432,3 +432,48 @@
 .btn-cancel:hover {
   background: #7F8C8D;
 }
+
+.sub-options-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.sub-option-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.sub-option-item .edit-input {
+  flex: 1;
+}
+
+.btn-edit-small {
+  padding: 4px 8px;
+  font-size: 12px;
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.btn-edit-small:hover {
+  background: #1a5280;
+}
+
+.btn-delete-small {
+  padding: 4px 8px;
+  font-size: 14px;
+  background: var(--danger);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.btn-delete-small:hover {
+  background: #c0392b;
+}

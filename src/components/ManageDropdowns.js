@@ -19,6 +19,7 @@ export default function ManageDropdowns() {
     const [tyreActions, setTyreActions] = useState([]);
     const [tyreBrands, setTyreBrands] = useState([]);
     const [fluidTypes, setFluidTypes] = useState([]);
+    const [editingSubOptions, setEditingSubOptions] = useState(null); // {table, id, options: []}
 
     // Edit mode states
     const [editingId, setEditingId] = useState(null);
@@ -435,6 +436,77 @@ export default function ManageDropdowns() {
             showMessage('Error updating field', false);
         }
     };
+    const startEditSubOptions = (table, id, currentSubOptions) => {
+        try {
+            const parsed = typeof currentSubOptions === 'string'
+                ? JSON.parse(currentSubOptions)
+                : currentSubOptions || [];
+            setEditingSubOptions({ table, id, options: parsed });
+        } catch {
+            setEditingSubOptions({ table, id, options: [] });
+        }
+    };
+
+    const saveSubOptions = async () => {
+        if (!editingSubOptions) return;
+
+        setLoading(true);
+        const { table, id, options } = editingSubOptions;
+
+        try {
+            if (table === 'breakdown_issues') {
+                const { error } = await query`
+        UPDATE breakdown_issues 
+        SET sub_options = ${JSON.stringify(options)}::jsonb 
+        WHERE id = ${id}
+      `;
+                if (error) throw error;
+            } else if (table === 'maintenance_issues') {
+                const { error } = await query`
+        UPDATE maintenance_issues 
+        SET sub_options = ${JSON.stringify(options)}::jsonb 
+        WHERE id = ${id}
+      `;
+                if (error) throw error;
+            }
+
+            showMessage('Sub-options updated!');
+            setEditingSubOptions(null);
+            fetchAllData();
+        } catch (error) {
+            console.error('Save sub-options error:', error);
+            showMessage('Error saving sub-options', false);
+        }
+
+        setLoading(false);
+    };
+
+    const addSubOption = () => {
+        if (!editingSubOptions) return;
+        const newOpt = prompt('Enter new sub-option:');
+        if (newOpt && newOpt.trim()) {
+            setEditingSubOptions({
+                ...editingSubOptions,
+                options: [...editingSubOptions.options, newOpt.trim()]
+            });
+        }
+    };
+
+    const removeSubOption = (index) => {
+        if (!editingSubOptions) return;
+        setEditingSubOptions({
+            ...editingSubOptions,
+            options: editingSubOptions.options.filter((_, i) => i !== index)
+        });
+    };
+
+    const updateSubOption = (index, value) => {
+        if (!editingSubOptions) return;
+        const updated = [...editingSubOptions.options];
+        updated[index] = value;
+        setEditingSubOptions({ ...editingSubOptions, options: updated });
+    };
+
 
 
 
@@ -447,6 +519,7 @@ export default function ManageDropdowns() {
                             <th>Name</th>
                             {showOrder && <th>Order</th>}
                             {showRequiresFluids && <th>Requires Fluids</th>}
+                            <th>Sub-Options</th>
                             <th>Status</th>
                             <th>Actions</th>
                         </tr>
@@ -508,6 +581,32 @@ export default function ManageDropdowns() {
                                             )}
                                         </td>
                                     )}
+                                    {/* Sub-Options cell */}
+                                    <td>
+                                        {(table === 'breakdown_issues' || table === 'maintenance_issues') ? (
+                                            <button
+                                                onClick={() => startEditSubOptions(table, item.id, item.sub_options)}
+                                                className="btn-edit-small"
+                                                type="button"
+                                            >
+                                                ✎ Edit Options ({
+                                                    (() => {
+                                                        try {
+                                                            const opts = typeof item.sub_options === 'string'
+                                                                ? JSON.parse(item.sub_options)
+                                                                : item.sub_options || [];
+                                                            return opts.length;
+                                                        } catch {
+                                                            return 0;
+                                                        }
+                                                    })()
+                                                })
+                                            </button>
+                                        ) : (
+                                            <span style={{ color: 'var(--text-light)', fontSize: '12px' }}>N/A</span>
+                                        )}
+                                    </td>
+
                                     <td>
                                         {editingId === item.id ? (
                                             <label className="checkbox-inline">
@@ -916,6 +1015,68 @@ export default function ManageDropdowns() {
                                 <p className="description">Types of fluids and oils used in maintenance</p>
                                 {renderTable(fluidTypes, 'fluid_types', 'fluid_name')}
                                 {renderAddForm('fluid_types', 'fluid_name', false, false, 'e.g., Engine Oil 15W40')}
+                            </div>
+                        )}
+                        {/* Sub-Options Editor Modal */}
+                        {editingSubOptions && (
+                            <div className="modal-overlay" onClick={() => setEditingSubOptions(null)}>
+                                <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                                    <div className="modal-header">
+                                        <h3>Edit Sub-Options</h3>
+                                        <button className="modal-close" onClick={() => setEditingSubOptions(null)}>×</button>
+                                    </div>
+                                    <div className="modal-body">
+                                        <p className="description">
+                                            Manage specific options that appear after selecting this issue
+                                        </p>
+
+                                        <div className="sub-options-list">
+                                            {editingSubOptions.options.map((opt, idx) => (
+                                                <div key={idx} className="sub-option-item">
+                                                    <input
+                                                        type="text"
+                                                        value={opt}
+                                                        onChange={(e) => updateSubOption(idx, e.target.value)}
+                                                        className="edit-input"
+                                                    />
+                                                    <button
+                                                        onClick={() => removeSubOption(idx)}
+                                                        className="btn-delete-small"
+                                                        type="button"
+                                                    >
+                                                        🗑
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        <button
+                                            onClick={addSubOption}
+                                            className="btn-add"
+                                            style={{ marginTop: 12 }}
+                                            type="button"
+                                        >
+                                            + Add Sub-Option
+                                        </button>
+                                    </div>
+                                    <div className="modal-footer">
+                                        <button
+                                            onClick={saveSubOptions}
+                                            className="btn-primary"
+                                            disabled={loading}
+                                            type="button"
+                                        >
+                                            Save Changes
+                                        </button>
+                                        <button
+                                            onClick={() => setEditingSubOptions(null)}
+                                            className="btn-secondary"
+                                            type="button"
+                                        >
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                         )}
                     </div>

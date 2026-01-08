@@ -12,10 +12,9 @@ export default function MechanicForm() {
         job_type: '',
 
         // Arrays for multiple issues
-        breakdownIssues: [],
-        maintenanceIssues: [],
         tyres: [],
-
+        breakdownIssues: [{ issue: '', detail: '', sub_option: '' }],
+        maintenanceIssues: [{ issue: '', detail: '', sub_option: '' }],
         service_interval: '',
         other_description: '',
         sample_number: '',
@@ -122,13 +121,6 @@ export default function MechanicForm() {
         }
     };
 
-    // Breakdown Issues
-    const addBreakdownIssue = () => {
-        setFormData(prev => ({
-            ...prev,
-            breakdownIssues: [...prev.breakdownIssues, { issue: '', detail: '' }]
-        }));
-    };
 
     const updateBreakdownIssue = (index, field, value) => {
         const updated = [...formData.breakdownIssues];
@@ -146,13 +138,43 @@ export default function MechanicForm() {
         }));
     };
 
-    // Maintenance Issues
-    const addMaintenanceIssue = () => {
-        setFormData(prev => ({
-            ...prev,
-            maintenanceIssues: [...prev.maintenanceIssues, { issue: '', detail: '', battery_position: '' }]
-        }));
+    const addBreakdownIssue = () => {
+        setFormData({
+            ...formData,
+            breakdownIssues: [...formData.breakdownIssues, { issue: '', detail: '', sub_option: '' }]
+        });
     };
+
+    const addMaintenanceIssue = () => {
+        setFormData({
+            ...formData,
+            maintenanceIssues: [...formData.maintenanceIssues, { issue: '', detail: '', sub_option: '' }]
+        });
+    };
+
+    const getSubOptionsForIssue = (issueType, issueName) => {
+        let issuesList = [];
+        if (issueType === 'breakdown') {
+            issuesList = breakdownIssuesList;
+        } else if (issueType === 'maintenance') {
+            issuesList = maintenanceIssuesList;
+        }
+
+
+        const issue = issuesList.find(i => i.issue_name === issueName);
+        if (issue && issue.sub_options) {
+            try {
+                // Parse if string, return if already array
+                return typeof issue.sub_options === 'string'
+                    ? JSON.parse(issue.sub_options)
+                    : issue.sub_options;
+            } catch {
+                return [];
+            }
+        }
+        return [];
+    };
+
 
     const updateMaintenanceIssue = (index, field, value) => {
         const updated = [...formData.maintenanceIssues];
@@ -253,19 +275,26 @@ export default function MechanicForm() {
         if (formData.job_type === 'Breakdown') {
             if (formData.breakdownIssues.length === 0) return 'Please add at least one breakdown issue';
             for (let issue of formData.breakdownIssues) {
-                if (!issue.issue) return 'Please select all breakdown issues';
-                if (issue.issue === 'Brakes' && !issue.detail) return 'Please select brake detail';
+                if (!issue.issue) return 'Please select an issue type for all breakdown issues';
+                if (!issue.sub_option && getSubOptionsForIssue('breakdown', issue.issue).length > 0) {
+                    return 'Please select a specific issue for all breakdown items';
+                }
             }
         }
 
         if (formData.job_type === 'Maintenance') {
             if (formData.maintenanceIssues.length === 0) return 'Please add at least one maintenance issue';
             for (let issue of formData.maintenanceIssues) {
-                if (!issue.issue) return 'Please select all maintenance issues';
-                if (issue.issue === 'Brakes' && !issue.detail) return 'Please select brake detail';
-                if (issue.issue === 'Battery' && !issue.battery_position) return 'Please select battery position';
+                if (!issue.issue) return 'Please select an issue type';
+                if (!issue.sub_option && getSubOptionsForIssue('maintenance', issue.issue).length > 0) {
+                    return 'Please select a specific issue for all maintenance items';
+                }
+                if (issue.issue === 'Battery' && !issue.battery_position) {
+                    return 'Battery position is required';
+                }
             }
         }
+
         if (formData.job_type === 'Service') {
             if (!formData.service_interval) return 'Please select service interval';
             if (!formData.sample_number) return 'Sample number is required for services';
@@ -466,7 +495,7 @@ export default function MechanicForm() {
                                 <div className="section-header">
                                     <h4>Breakdown Issues</h4>
                                     <button type="button" onClick={addBreakdownIssue} className="btn-add-issue">
-                                        + Add Breakdown Issue
+                                        + Add Issue
                                     </button>
                                 </div>
 
@@ -484,46 +513,73 @@ export default function MechanicForm() {
                                         </div>
 
                                         <div className="form-group">
-                                            <label>Breakdown Issue *</label>
+                                            <label>Issue Type *</label>
                                             <select
                                                 value={issue.issue}
-                                                onChange={(e) => updateBreakdownIssue(index, 'issue', e.target.value)}
+                                                onChange={(e) => {
+                                                    const updated = [...formData.breakdownIssues];
+                                                    updated[index].issue = e.target.value;
+                                                    updated[index].sub_option = ''; // Reset sub-option when issue changes
+                                                    setFormData({ ...formData, breakdownIssues: updated });
+                                                }}
                                                 required
                                             >
                                                 <option value="">Select Issue</option>
                                                 {breakdownIssuesList.map((b) => (
-                                                    <option key={b.id} value={b.issue_name}>{b.issue_name}</option>
+                                                    <option key={b.id} value={b.issue_name}>
+                                                        {b.issue_name}
+                                                    </option>
                                                 ))}
                                             </select>
                                         </div>
 
-                                        {issue.issue === 'Brakes' && (
+                                        {/* Sub-Option Dropdown - shows after issue is selected */}
+                                        {issue.issue && getSubOptionsForIssue('breakdown', issue.issue).length > 0 && (
                                             <div className="form-group">
-                                                <label>Brake Detail *</label>
+                                                <label>Specific Issue *</label>
                                                 <select
-                                                    value={issue.detail}
-                                                    onChange={(e) => updateBreakdownIssue(index, 'detail', e.target.value)}
+                                                    value={issue.sub_option}
+                                                    onChange={(e) => {
+                                                        const updated = [...formData.breakdownIssues];
+                                                        updated[index].sub_option = e.target.value;
+                                                        setFormData({ ...formData, breakdownIssues: updated });
+                                                    }}
                                                     required
                                                 >
-                                                    <option value="">Select Detail</option>
-                                                    {brakeDetails.map((detail) => (
-                                                        <option key={detail.id} value={detail.position_name}>
-                                                            {detail.position_name}
+                                                    <option value="">Select Specific Issue</option>
+                                                    {getSubOptionsForIssue('breakdown', issue.issue).map((opt, idx) => (
+                                                        <option key={idx} value={opt}>
+                                                            {opt}
                                                         </option>
                                                     ))}
                                                 </select>
                                             </div>
                                         )}
+
+                                        <div className="form-group">
+                                            <label>Additional Details</label>
+                                            <textarea
+                                                placeholder="Describe the breakdown in detail..."
+                                                value={issue.detail}
+                                                onChange={(e) => {
+                                                    const updated = [...formData.breakdownIssues];
+                                                    updated[index].detail = e.target.value;
+                                                    setFormData({ ...formData, breakdownIssues: updated });
+                                                }}
+                                                rows="3"
+                                            />
+                                        </div>
                                     </div>
                                 ))}
 
                                 {formData.breakdownIssues.length === 0 && (
                                     <div className="empty-state">
-                                        <p>No breakdown issues added yet. Click "+ Add Breakdown Issue" above.</p>
+                                        <p>No breakdown issues added yet. Click "+ Add Issue" above.</p>
                                     </div>
                                 )}
                             </div>
                         )}
+
 
                         {/* MAINTENANCE - Multiple Issues */}
                         {formData.job_type === 'Maintenance' && (
@@ -531,7 +587,7 @@ export default function MechanicForm() {
                                 <div className="section-header">
                                     <h4>Maintenance Issues</h4>
                                     <button type="button" onClick={addMaintenanceIssue} className="btn-add-issue">
-                                        + Add Maintenance Issue
+                                        + Add Issue
                                     </button>
                                 </div>
 
@@ -549,43 +605,63 @@ export default function MechanicForm() {
                                         </div>
 
                                         <div className="form-group">
-                                            <label>Maintenance Issue *</label>
+                                            <label>Issue Type *</label>
                                             <select
                                                 value={issue.issue}
-                                                onChange={(e) => updateMaintenanceIssue(index, 'issue', e.target.value)}
+                                                onChange={(e) => {
+                                                    const updated = [...formData.maintenanceIssues];
+                                                    updated[index].issue = e.target.value;
+                                                    updated[index].sub_option = ''; // Reset sub-option
+                                                    if (e.target.value === 'Battery') {
+                                                        updated[index].battery_position = '';
+                                                    }
+                                                    setFormData({ ...formData, maintenanceIssues: updated });
+                                                }}
                                                 required
                                             >
                                                 <option value="">Select Issue</option>
                                                 {maintenanceIssuesList.map((m) => (
-                                                    <option key={m.id} value={m.issue_name}>{m.issue_name}</option>
+                                                    <option key={m.id} value={m.issue_name}>
+                                                        {m.issue_name}
+                                                    </option>
                                                 ))}
                                             </select>
                                         </div>
 
-                                        {issue.issue === 'Brakes' && (
+                                        {/* Sub-Option Dropdown */}
+                                        {issue.issue && getSubOptionsForIssue('maintenance', issue.issue).length > 0 && (
                                             <div className="form-group">
-                                                <label>Brake Detail *</label>
+                                                <label>Specific Issue *</label>
                                                 <select
-                                                    value={issue.detail}
-                                                    onChange={(e) => updateMaintenanceIssue(index, 'detail', e.target.value)}
+                                                    value={issue.sub_option}
+                                                    onChange={(e) => {
+                                                        const updated = [...formData.maintenanceIssues];
+                                                        updated[index].sub_option = e.target.value;
+                                                        setFormData({ ...formData, maintenanceIssues: updated });
+                                                    }}
                                                     required
                                                 >
-                                                    <option value="">Select Detail</option>
-                                                    {brakeDetails.map((detail) => (
-                                                        <option key={detail.id} value={detail.position_name}>
-                                                            {detail.position_name}
+                                                    <option value="">Select Specific Issue</option>
+                                                    {getSubOptionsForIssue('maintenance', issue.issue).map((opt, idx) => (
+                                                        <option key={idx} value={opt}>
+                                                            {opt}
                                                         </option>
                                                     ))}
                                                 </select>
                                             </div>
                                         )}
 
+                                        {/* Battery Position (only for Battery issue) */}
                                         {issue.issue === 'Battery' && (
                                             <div className="form-group">
                                                 <label>Battery Position *</label>
                                                 <select
                                                     value={issue.battery_position}
-                                                    onChange={(e) => updateMaintenanceIssue(index, 'battery_position', e.target.value)}
+                                                    onChange={(e) => {
+                                                        const updated = [...formData.maintenanceIssues];
+                                                        updated[index].battery_position = e.target.value;
+                                                        setFormData({ ...formData, maintenanceIssues: updated });
+                                                    }}
                                                     required
                                                 >
                                                     <option value="">Select Position</option>
@@ -597,16 +673,31 @@ export default function MechanicForm() {
                                                 </select>
                                             </div>
                                         )}
+
+                                        <div className="form-group">
+                                            <label>Additional Details</label>
+                                            <textarea
+                                                placeholder="Describe the maintenance work..."
+                                                value={issue.detail}
+                                                onChange={(e) => {
+                                                    const updated = [...formData.maintenanceIssues];
+                                                    updated[index].detail = e.target.value;
+                                                    setFormData({ ...formData, maintenanceIssues: updated });
+                                                }}
+                                                rows="3"
+                                            />
+                                        </div>
                                     </div>
                                 ))}
 
                                 {formData.maintenanceIssues.length === 0 && (
                                     <div className="empty-state">
-                                        <p>No maintenance issues added yet. Click "+ Add Maintenance Issue" above.</p>
+                                        <p>No maintenance issues added yet. Click "+ Add Issue" above.</p>
                                     </div>
                                 )}
                             </div>
                         )}
+
 
                         {/* SERVICE */}
                         {formData.job_type === 'Service' && (
