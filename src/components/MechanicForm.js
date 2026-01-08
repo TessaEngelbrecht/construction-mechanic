@@ -37,7 +37,7 @@ export default function MechanicForm() {
     const [breakdownIssuesList, setBreakdownIssuesList] = useState([]);
     const [maintenanceIssuesList, setMaintenanceIssuesList] = useState([]);
     const [serviceIntervals, setServiceIntervals] = useState([]);
-    const [brakeDetails, setBrakeDetails] = useState([]);
+    //const [brakeDetails, setBrakeDetails] = useState([]);
     const [batteryPositions, setBatteryPositions] = useState([]);
     const [tyreActions, setTyreActions] = useState([]);
     const [fluidTypes, setFluidTypes] = useState([]);
@@ -74,8 +74,8 @@ export default function MechanicForm() {
         const { data: serviceData } = await query`SELECT * FROM service_intervals WHERE active = true ORDER BY interval_name ASC`;
         setServiceIntervals(serviceData || []);
 
-        const { data: brakeData } = await query`SELECT * FROM brake_details WHERE active = true ORDER BY display_order ASC`;
-        setBrakeDetails(brakeData || []);
+       //const { data: brakeData } = await query`SELECT * FROM brake_details WHERE active = true ORDER BY display_order ASC`;
+        //setBrakeDetails(brakeData || []);
 
         const { data: batteryData } = await query`SELECT * FROM battery_positions WHERE active = true ORDER BY position_name ASC`;
         setBatteryPositions(batteryData || []);
@@ -123,14 +123,14 @@ export default function MechanicForm() {
     };
 
 
-    const updateBreakdownIssue = (index, field, value) => {
-        const updated = [...formData.breakdownIssues];
-        updated[index][field] = value;
-        if (field === 'issue' && value !== 'Brakes') {
-            updated[index].detail = '';
-        }
-        setFormData({ ...formData, breakdownIssues: updated });
-    };
+    // const updateBreakdownIssue = (index, field, value) => {
+    //     const updated = [...formData.breakdownIssues];
+    //     updated[index][field] = value;
+    //     if (field === 'issue' && value !== 'Brakes') {
+    //         updated[index].detail = '';
+    //     }
+    //     setFormData({ ...formData, breakdownIssues: updated });
+    // };
 
     const removeBreakdownIssue = (index) => {
         setFormData(prev => ({
@@ -177,15 +177,15 @@ export default function MechanicForm() {
     };
 
 
-    const updateMaintenanceIssue = (index, field, value) => {
-        const updated = [...formData.maintenanceIssues];
-        updated[index][field] = value;
-        if (field === 'issue') {
-            if (value !== 'Brakes') updated[index].detail = '';
-            if (value !== 'Battery') updated[index].battery_position = '';
-        }
-        setFormData({ ...formData, maintenanceIssues: updated });
-    };
+    // const updateMaintenanceIssue = (index, field, value) => {
+    //     const updated = [...formData.maintenanceIssues];
+    //     updated[index][field] = value;
+    //     if (field === 'issue') {
+    //         if (value !== 'Brakes') updated[index].detail = '';
+    //         if (value !== 'Battery') updated[index].battery_position = '';
+    //     }
+    //     setFormData({ ...formData, maintenanceIssues: updated });
+    // };
 
     const removeMaintenanceIssue = (index) => {
         setFormData(prev => ({
